@@ -100,7 +100,7 @@ inline void display_set_key(u8 value){
 
 void display_get_input(){//gets the current input to the display
     SDL_Event event;
-    if(SDL_PollEvent(&event)){
+    while(SDL_PollEvent(&event)){
         switch(event.type){
         case SDL_KEYUP:
             key_up(event.key.keysym.sym);
