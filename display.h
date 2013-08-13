@@ -1,7 +1,7 @@
 #ifndef DISPLAY_H
 #define DISPLAY_H
 
-#include <SDL/SDL.h>
+#include <SDL2/SDL.h>
 #include "types.h"
 #include "defs.h"
 
@@ -18,7 +18,6 @@ u8 display_get_key();
 void display_set_key(u8 value);
 void display_init();
 void display_redraw();
-void display_clear();
 void display_get_input();
 
 extern Display display;

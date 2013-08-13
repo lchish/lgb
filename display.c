@@ -1,80 +1,84 @@
 #include <stdlib.h>
-#include <SDL/SDL.h>
+#include <SDL2/SDL.h>
 
 #include "display.h"
 #include "gpu.h"
 #include "types.h"
 #include "cpu.h"
 
-static SDL_Surface *surface;
+SDL_Window *window;
+SDL_Renderer *renderer;
+SDL_Texture *texture;
+
 Key *key;
 Display display;
+Uint32 *pixels;
 
-static void key_up(SDLKey skey){
+static void key_up(SDL_Scancode skey){
     switch(skey){
-    case SDLK_RETURN://start
+    case SDL_SCANCODE_RETURN://start
         key->rows[0] |= 0x08;
         break;
-    case SDLK_LSHIFT://select
+    case SDL_SCANCODE_LSHIFT://select
         key->rows[0] |= 0x04;
         break;
-    case SDLK_x://b
+    case SDL_SCANCODE_X://b
         key->rows[0] |= 0x02;
         break;
-    case SDLK_z://a
+    case SDL_SCANCODE_Z://a
         key->rows[0] |= 0x01;
         break;
-    case SDLK_DOWN://down
+    case SDL_SCANCODE_DOWN://down
         key->rows[1] |= 0x08;
         break;
-    case SDLK_UP://up
+    case SDL_SCANCODE_UP://up
         key->rows[1] |= 0x04;
         break;
-    case SDLK_LEFT://left
+    case SDL_SCANCODE_LEFT://left
         key->rows[1] |= 0x02;
         break;
-    case SDLK_RIGHT://right
+    case SDL_SCANCODE_RIGHT://right
         key->rows[1] |= 0x01;
         break;
-    case SDLK_ESCAPE:
+    case SDL_SCANCODE_ESCAPE:
         cpu_exit();
         display.exit = 1;
-    case SDLK_p:
+    case SDL_SCANCODE_P:
         cpu_exit();
         break;
-    case SDLK_s:
+    case SDL_SCANCODE_S:
         cpu_run_once();
         break;
     default:
-        fprintf(stderr,"Key not used\n");
+        fprintf(stderr,"Key %s not used\n", SDL_GetScancodeName(skey));
         break;
     }
 }
 
-static void key_down(SDLKey skey){//clear the right bit
+static void key_down(SDL_Scancode skey){//clear the right bit
     switch(skey){
-    case SDLK_RETURN://start
+    case SDL_SCANCODE_RETURN://start
         key->rows[0] &= 0x07;
         break;
-    case SDLK_RSHIFT://select
+    case SDL_SCANCODE_LSHIFT://select
         key->rows[0] &= 0x0B;
         break;
-    case SDLK_x://b
+    case SDL_SCANCODE_X://b
         key->rows[0] &= 0x0D;
         break;
-    case SDLK_z://a
+    case SDL_SCANCODE_Z://a
         key->rows[0] &= 0x0E;
         break;
-    case SDLK_DOWN://down
+    case SDL_SCANCODE_DOWN://down
         key->rows[1] &= 0x07;
         break;
-    case SDLK_UP://up
+    case SDL_SCANCODE_UP://up
         key->rows[1] &= 0x0B;
         break;
-    case SDLK_LEFT://left
+    case SDL_SCANCODE_LEFT://left
         key->rows[1] &= 0x0D;
         break;
-    case SDLK_RIGHT://right
+    case SDL_SCANCODE_RIGHT://right
         key->rows[1] &= 0x0E;
         break;
     default:
@@ -103,10 +107,10 @@ void display_get_input(){//gets the current input to the display
     while(SDL_PollEvent(&event)){
         switch(event.type){
         case SDL_KEYUP:
-            key_up(event.key.keysym.sym);
+            key_up(event.key.keysym.scancode);
             break;
         case SDL_KEYDOWN:
-            key_down(event.key.keysym.sym);
+            key_down(event.key.keysym.scancode);
             break;
         case SDL_QUIT:
             cpu_exit();
@@ -118,48 +122,39 @@ void display_get_input(){//gets the current input to the display
 
 void display_redraw(){
     int x,y;
-    Uint8 *p;
+    Uint32 *p;
     for(y=0;y<HEIGHT;y++){
         for(x=0;x<WIDTH;x++){
-            p=(Uint8 *)surface->pixels+y * surface->pitch+
-                x * surface->format->BytesPerPixel;
+            p = &pixels[y * WIDTH + x];
+
             switch(gpu->screen[y][x]){
             case 0:
-                *p = 0xFF;//white
+                *p = 0xFFFFFFFF;//white
                 break;
             case 1:
-                *p = 0xFF/2;
+                *p = 0xFF808080;
                 break;
             case  2:
-                *p = 0xFF/4;
+                *p = 0xFF404040;
                 break;
             case 3:
-                *p = 0x0;//black
+                *p = 0xFF000000;//black
                 break;
             }
         }
     }
-    SDL_Flip(surface);
+    SDL_UpdateTexture(texture, NULL, pixels, WIDTH * sizeof(Uint32));
+    SDL_RenderClear(renderer);
+    SDL_RenderCopy(renderer,texture,NULL,NULL);
+    SDL_RenderPresent(renderer);
     display_get_input();//our version of update
 }
 
-void display_clear(){
-    int x,y;
-    Uint8 *p;
-    for(y=0;y<HEIGHT;y++){
-        for(x=0;x<WIDTH;x++){
-            p=(Uint8 *)surface->pixels+y * surface->pitch+x * surface->format->BytesPerPixel; 
-            *p =0;
-        }
-    }
-    SDL_Flip(surface);
-}
-
 void display_init(){
-    //set the keys
     int i;
+    pixels = malloc(sizeof(Uint32) * WIDTH * HEIGHT);
+    //set the keys
     key = malloc(sizeof(Key));
-
     for(i=0;i<2;i++){
         key->rows[i]=0x0F;
     }
@@ -169,8 +164,12 @@ void display_init(){
         exit(1);
     }
     atexit(SDL_Quit);
-    surface = SDL_SetVideoMode(WIDTH,HEIGHT,8,SDL_HWSURFACE);
-    if(surface == NULL){
+    window = SDL_CreateWindow("lgb", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WIDTH, HEIGHT,
+                              SDL_WINDOW_OPENGL);
+    renderer = SDL_CreateRenderer(window, -1 , 0);
+    texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+                                SDL_TEXTUREACCESS_STREAMING, WIDTH, HEIGHT);
+    if(window == NULL || renderer == NULL || texture == NULL){
         fprintf(stderr,"Unable to set video mode: %s",SDL_GetError());
         exit(1);
     }

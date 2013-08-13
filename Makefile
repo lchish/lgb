@@ -1,4 +1,4 @@
-CFLAGS = -Wall -g -lSDL -fprofile-arcs -ftest-coverage
+CFLAGS = -Wall -g -lSDL2 -fprofile-arcs -ftest-coverage
 CFILES = cpu.c mem.c gpu.c main.c display.c cpu_timings.c
 HFILES=$(CFILES:.c=.h)
 OBJECTS=$(CFILES:.c=.o)
