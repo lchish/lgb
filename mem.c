@@ -60,6 +60,9 @@ u8 get_mem(u16 address){
         if(address < 0xFEA0){
             return memory->wram[address - 0xF000];
         }
+        if(address == INTERRUPT_ENABLE){
+            return memory->interrupt_enable;
+        }
         if(address < 0xFF80){
             switch(address){
             case 0xFF00://get keys being pressed
@@ -82,11 +85,9 @@ u8 get_mem(u16 address){
                 return gpu_get_palette(OBJECT_PALETTE1);
             case INTERRUPT_FLAG:
                 return memory->interrupt_flags;
-            case INTERRUPT_ENABLE:
-                return memory->interrupt_enable;
             default:
-                printf("address: %x not handled\n",address);
-                exit(1);
+                printf("Reading from address: %x not handled\n",address);
+                return 0;
             }
         }
         if(address >= 0xFF80)
@@ -107,7 +108,6 @@ void set_mem(u16 address,u8 value){
     case 0x0000: case 0x1000: case 0x2000: case 0x3000: case 0x4000:
     case 0x5000: case 0x6000: case 0x7000:
         fprintf(stderr,"Rom memory cannot be written to\n");
-        exit(1);
         break;
     case 0x8000: case 0x9000:
         memory->vram[address-0x8000] = value;
@@ -133,6 +133,11 @@ void set_mem(u16 address,u8 value){
         if(address < 0xFEA0){
             memory->wram[address - 0xF000] = value;
             update_sprite(address);
+            return;
+        }
+        if(address == INTERRUPT_ENABLE){
+            printf("enabling memory interrupts %X\n",value);
+            memory->interrupt_enable = value;
             return;
         }
         if(address < 0xFF80){
@@ -161,10 +166,9 @@ void set_mem(u16 address,u8 value){
                 gpu_set_palette(value,OBJECT_PALETTE1);
                 return;
             case INTERRUPT_FLAG:
-                printf("setting memory interrupt flag to %X\n",value);
+                printf("setting memory interrupt flag to 0x%X\n",value);
                 memory->interrupt_flags = value;
-            case INTERRUPT_ENABLE:
-                memory->interrupt_enable = value;
+                return;
             case DISABLE_BOOT_ROM://disable boot rom
                 if(value == 1)
                     memory->in_bios = 0;
@@ -172,19 +176,20 @@ void set_mem(u16 address,u8 value){
                     fprintf(stderr,"cannot disable the boot rom twice\n");
                     exit(1);
                 }
-                break;
+                return;
+            default:
+                printf("Writing to address 0x%X not handled\n",address);
+                return;
             }
+
+            
         }
         if(address >= 0xFF80)
             memory->zram[address - 0xFF80] = value;
         return;
     default:
-        fprintf(stderr,"Writing to invalid memory address: %x \n",address);
+        fprintf(stderr,"Writing to invalid memory address: 0x%X \n",address);
         return;
     }
     
 }
-/*void set_mem_16(u16 address,u16 value){
-    set_mem(address,value & 0xFF);
-    set_mem(address+1,(value >> 8));
-    }*/

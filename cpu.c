@@ -303,10 +303,44 @@ void cb_opcodes(const u8 opcode){
         A = rot_right_8(A);
         break;
 
+    case 0x27://Shift n left into carry LSB set to 0
+        if(A & 0x80)
+            set_carry();
+        else
+            unset_carry();
+        A = (A << 1) & 0xFF;
+        if(!A)
+            set_zero();
+        else
+            unset_zero();
+        break;
+
     case 0x37://swap nibbles in A
         A = (( (A & 0xF0) >> 4) & 0x0F) | (( (A & 0x0F) << 4 ) & 0xF0);
         if(!A)set_zero();
         else unset_zero();
+        break;
+    case 0x38://shift b right
+        if(B & 1)
+            set_carry();
+        else
+            unset_carry();
+        B = (B >> 1) & 0xFF;
+        if(!B)
+            set_zero();
+        else
+            unset_zero();
+        break;
+    case 0x3F://shift A right
+        if(A & 1)
+            set_carry();
+        else
+            unset_carry();
+        A = (A >> 1) & 0xFF;
+        if(!B)
+            set_zero();
+        else
+            unset_zero();
         break;
 
     case 0x40://Test bit 0 of B
@@ -576,7 +610,7 @@ void cb_opcodes(const u8 opcode){
         A|=0x02;
         break;
     default:
-        printf("%X not implemented yet\n",opcode);
+        printf("CB opcode 0x%X not implemented yet\n",opcode);
         break;
     }
     cpu_time += cb_table[opcode];
@@ -599,7 +633,7 @@ void cpu_step(u8 opcode){
         break;
     case 0x03: // INC BC
         tmp = inc_16(u8_to_u16(B,C));
-        B = (tmp >> 8);
+        B = (tmp >> 8) & 0xFF;
         C = tmp & 0xFF;
         break;
     case 0x04://INC B
@@ -618,12 +652,12 @@ void cpu_step(u8 opcode){
     case 0x08://save sp to a given address
         tmp = (get_mem(PC+1) << 8) + get_mem(PC);
         set_mem(tmp, (SP & 0xFF));
-        set_mem(tmp+1, ((SP & 0xFF00) >> 8));
+        set_mem(tmp+1, (SP >> 8) & 0xFF);
         PC+=2;
         break;
     case 0x09://Add BC to HL
         tmp = add_16(u8_to_u16(B,C),u8_to_u16(H,L));
-        H = (tmp >> 8);
+        H = (tmp >> 8) & 0xFF;
         L = tmp & 0xFF;
         break;
     case 0x0A://Load A from Addres pointed to by BC
@@ -631,7 +665,7 @@ void cpu_step(u8 opcode){
         break;
     case 0x0B://Dec BC
         tmp = dec_16(u8_to_u16(B,C));
-        B = (tmp >> 8);
+        B = (tmp >> 8) & 0xFF;
         C = tmp & 0xFF;
         break;
     case 0x0C://INC C
@@ -653,15 +687,15 @@ void cpu_step(u8 opcode){
         cpu_stop =1;
         break;
     case 0x11://load 16bit immediate into DE
-        E=get_mem(PC++);
-        D=get_mem(PC++);
+        E = get_mem(PC++);
+        D = get_mem(PC++);
         break;
     case 0x12://Save A to address pointed by DE
         set_mem(u8_to_u16(D,E),A);
         break;
     case 0x13: //INC DE
         tmp = inc_16(u8_to_u16(D,E));
-        D = ((tmp & 0xFF00) >> 8);
+        D = (tmp >> 8) & 0xFF;
         E = tmp & 0xFF;
         break;
     case 0x14://INC D
@@ -682,7 +716,7 @@ void cpu_step(u8 opcode){
         break;
     case 0x19://Add DE to HL
         tmp = add_16(u8_to_u16(D,E),u8_to_u16(H,L));
-        H = (tmp >>8);
+        H = (tmp >> 8) & 0xFF;
         L = tmp & 0xFF;
         break;
     case 0x1A://Load A from Addres pointed to by DE
@@ -690,7 +724,7 @@ void cpu_step(u8 opcode){
         break;
     case 0x1B://Dec DE
         tmp = dec_16(u8_to_u16(D,E));
-        D = (tmp >> 8);
+        D = (tmp >> 8) & 0xFF;
         E = tmp & 0xFF;
         break;
     case 0x1C://INC E
@@ -717,13 +751,13 @@ void cpu_step(u8 opcode){
         PC++;
         break;
     case 0x21://load 16bit immediate into HL
-        L=get_mem(PC++);
-        H=get_mem(PC++);
+        L = get_mem(PC++);
+        H = get_mem(PC++);
         break;
     case 0x22://Save A to address pointed by HL and increment HL
         set_mem(u8_to_u16(H,L),A);
         tmp = inc_16(u8_to_u16(H,L));
-        H=((tmp & 0xFF00) >> 8);
+        H = (tmp >> 8) & 0xFF;
         L = tmp & 0xFF;
         break;
     case 0x23: //INC HL
@@ -754,7 +788,7 @@ void cpu_step(u8 opcode){
         break;
     case 0x29://Add HL to HL
         tmp = add_16(u8_to_u16(H,L),u8_to_u16(H,L));
-        H = (tmp >>8);
+        H = (tmp >> 8) & 0xFF;
         L = tmp & 0xFF;
         break;
     case 0x2A://Load A from Address pointed to by HL and INC HL
@@ -765,7 +799,7 @@ void cpu_step(u8 opcode){
         break;
     case 0x2B://Dec HL
         tmp = dec_16(u8_to_u16(H,L));
-        H = (tmp >> 8);
+        H = (tmp >> 8) & 0xFF;
         L = tmp & 0xFF;
         break;
     case 0x2C://INC L
@@ -794,12 +828,12 @@ void cpu_step(u8 opcode){
         break;
     case 0x31://load 16bit immediate into SP
         SP = (get_mem(PC+1) << 8) + get_mem(PC);
-        PC +=2;
+        PC += 2;
         break;
     case 0x32://Save A to address pointed by HL and dec HL
         set_mem(u8_to_u16(H,L),A);
         tmp = dec_16(u8_to_u16(H,L));
-        H=((tmp & 0xFF00) >> 8);
+        H= (tmp >> 8) & 0xFF;
         L = (tmp & 0xFF);
         break;
     case 0x33: //INC SP
@@ -811,7 +845,7 @@ void cpu_step(u8 opcode){
     case 0x35://DEC (HL)
         dec_mem(u8_to_u16(H,L));
         break;
-    case 0x36://Load immediate into addres pointed by HL
+    case 0x36://Load immediate into address pointed by HL
         set_mem(u8_to_u16(H,L),get_mem(PC++));
         break;
     case 0x37://set carry flag
@@ -828,13 +862,13 @@ void cpu_step(u8 opcode){
         break;
     case 0x39://Add SP to HL
         tmp = add_16(SP,u8_to_u16(H,L));
-        H = (tmp >>8);
-        L = (u8)tmp;
+        H = (tmp >> 8) & 0xFF;
+        L = tmp & 0xFF;
         break;
     case 0x3A://Load A from Addres pointed to by HL and DEC HL
         A = get_mem(u8_to_u16(H,L));
         tmp = dec_16(u8_to_u16(H,L));
-        H = ((tmp &0xFF00) >> 8);
+        H = (tmp >> 8) & 0xFF;
         L = tmp & 0xFF;
         break;
     case 0x3B://Dec SP
@@ -1019,7 +1053,6 @@ void cpu_step(u8 opcode){
         set_mem(u8_to_u16(H,L),L);
         break;
     case 0x76://HALT
-        //printf("call to cpu halt\n");
         cpu_halt = 1;
         break;
     case 0x77://copy A to Address pointed to by HL
@@ -1271,9 +1304,8 @@ void cpu_step(u8 opcode){
         break;
     case 0xC4://call routine at 16 bit immediate if last result not zero
         if(!(F& 0x80)){
-            set_mem(--SP,(((PC+2) & 0xFF00) >> 8));
-            set_mem(--SP,((PC+2) & 0xFF) );
-                    //set_mem_16(SP,PC+2);//save program counter to stack
+            set_mem(--SP,((PC+2) >> 8) & 0xFF);
+            set_mem(--SP,(PC+2) & 0xFF);
             PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
             cpu_time +=12;
             op_time+=12;
@@ -1289,10 +1321,8 @@ void cpu_step(u8 opcode){
         A = add_8(A,get_mem(PC++));
         break;
     case 0xC7://call routine at 0
-        //SP-=2;
-            set_mem(--SP,((PC & 0xFF00) >> 8));
-            set_mem(--SP,(PC & 0xFF) );
-            //set_mem_16(SP,PC);//save program counter to stack
+        set_mem(--SP,(PC >> 8) & 0xFF);
+        set_mem(--SP,PC & 0xFF);
         PC = 0x00;
         break;
     case 0xC8://Return if last result was zero
@@ -1321,10 +1351,8 @@ void cpu_step(u8 opcode){
         break;
     case 0xCC://call routine at 16 bit immediate if last result was zero
         if(F& 0x80){
-            //SP-=2;
-            //set_mem_16(SP,PC+2);
-            set_mem(--SP,(((PC+2) & 0xFF00) >> 8));
-            set_mem(--SP,((PC+2) & 0xFF) );
+            set_mem(--SP,((PC+2) >> 8) & 0xFF);
+            set_mem(--SP,(PC+2) & 0xFF);
             PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
             cpu_time+=12;
             op_time+=12;
@@ -1333,22 +1361,16 @@ void cpu_step(u8 opcode){
         }
         break;
     case 0xCD://call routine at 16 bit immediate
-        //SP -=2;
-            set_mem(--SP,(((PC+2) & 0xFF00) >> 8));
-            set_mem(--SP,((PC+2) & 0xFF) );
-
-            //set_mem_16(SP,PC+2);
+        set_mem(--SP,((PC+2) >> 8) & 0xFF);
+        set_mem(--SP, (PC+2) & 0xFF);
         PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
         break;
     case 0xCE://ADD immediate and carry to A
         A = add_8(A,get_mem(PC++) + (F&0x10 ? 1:0));
         break;
     case 0xCF://call routine at 0x0008
-        //SP -=2;
-            set_mem(--SP,((PC & 0xFF00) >> 8));
-            set_mem(--SP,(PC & 0xFF) );
-
-            //set_mem_16(SP,PC);
+        set_mem(--SP,(PC >> 8) & 0xFF);
+        set_mem(--SP, PC & 0xFF);
         PC = 0x08;
         break;
     case 0xD0://Return if last result was not carry
@@ -1372,18 +1394,16 @@ void cpu_step(u8 opcode){
             PC+=2;
         }
         break;
-    case 0xD3://unused
-        break;
     case 0xD4://call routine at 16 bit immediate if last result not carry
         if(!(F& 0x10)){
             //SP-=2;
-            set_mem(--SP,(((PC+2) & 0xFF00) >> 8));
-            set_mem(--SP,((PC+2) & 0xFF) );
+            set_mem(--SP,((PC + 2) >> 8) & 0xFF);
+            set_mem(--SP,((PC + 2) & 0xFF) );
 
             //set_mem_16(SP,PC+2);//save program counter to stack
-            PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
-            cpu_time+=12;
-            op_time+=12;
+            PC = u8_to_u16(get_mem(PC + 1), get_mem(PC));
+            cpu_time += 12;
+            op_time += 12;
         }else{
             PC+=2;
         }
@@ -1396,7 +1416,7 @@ void cpu_step(u8 opcode){
         A = sub_8(A,get_mem(PC++));
         break;
     case 0xD7://call routine at 0x10
-        set_mem(--SP,(PC & 0xFF00) >> 8);
+        set_mem(--SP,(PC >> 8) & 0xFF);
         set_mem(--SP,(PC & 0xFF) );
         PC = 0x10;
         break;
@@ -1409,10 +1429,10 @@ void cpu_step(u8 opcode){
         }
         break;
     case 0xD9://enable interrupts and return
-        printf("enabling interrupts\n");
-        interrupts =1;
+        printf("enabling cpu interrupts\n");
+        interrupts = 1;
         PC = u8_to_u16(get_mem(SP+1),(get_mem(SP)));
-        SP +=2;
+        SP += 2;
         break;
     case 0xDA://Absolute jump to 16 bit immediate if last result carry
         if(F & 0x10){
@@ -1427,7 +1447,7 @@ void cpu_step(u8 opcode){
         break;
     case 0xDC://call routine at 16 bit immediate if last result carry
         if(F & 0x10){
-            set_mem(--SP,(((PC+2) & 0xFF00) >> 8));
+            set_mem(--SP,((PC+2) >> 8) & 0xFF);
             set_mem(--SP,((PC+2) & 0xFF) );
             PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
             cpu_time+=12;
@@ -1442,7 +1462,7 @@ void cpu_step(u8 opcode){
         A = sub_8(A,get_mem(PC++) + (F&0x10 ? 1:0));
         break;
     case 0xDF://call routine at 0x0018
-        set_mem(--SP,((PC & 0xFF00) >> 8));
+        set_mem(--SP,(PC >> 8) & 0xFF);
         set_mem(--SP,(PC & 0xFF) );
         PC = 0x18;
         break;
@@ -1469,11 +1489,8 @@ void cpu_step(u8 opcode){
         A = and_8(A,get_mem(PC++));
         break;
     case 0xE7://call routine at 0x20
-        //SP-=2;
-            set_mem(--SP,((PC & 0xFF00) >> 8));
-            set_mem(--SP,(PC & 0xFF) );
-
-            //set_mem_16(SP,PC);
+        set_mem(--SP,(PC >> 8) & 0xFF);
+        set_mem(--SP,(PC & 0xFF) );
         PC = 0x20;
         break;
     case 0xE8://add signed 8bit immediate to SP
@@ -1495,12 +1512,9 @@ void cpu_step(u8 opcode){
     case 0xEE://xor 8 bit immediate against A
         A = xor_8(A,get_mem(PC++));
         break;
-    case 0xEF://call routine at 0x0028
-        //SP-=2;
-        //set_mem_16(SP,PC);
-            set_mem(--SP,((PC & 0xFF00) >> 8));
-            set_mem(--SP,(PC & 0xFF) );
-
+    case 0xEF://call routine at 0x28
+        set_mem(--SP,(PC >> 8) & 0xFF);
+        set_mem(--SP,(PC & 0xFF) );
         PC = 0x28;
         break;
 
@@ -1511,13 +1525,12 @@ void cpu_step(u8 opcode){
         F = get_mem(SP++);
         A = get_mem(SP++);
         break;
-    case 0xF2://unused
+    case 0xF2://Put value at address $FF00 + register C into A
+        A = get_mem(0xFF00 + C);
         break;
     case 0xF3://Disable interrupts
-        printf("Disable interrupts\n");
+        printf("Disabling cpu interrupts\n");
         interrupts = 0;
-        break;
-    case 0xF4://unused
         break;
     case 0xF5://PUSH AF onto stack
         set_mem(--SP,A);
@@ -1527,17 +1540,13 @@ void cpu_step(u8 opcode){
         A = or_8(A,get_mem(PC++));
         break;
     case 0xF7://call routine at 0x30
-        //SP-=2;
-        //set_mem_16(SP,PC);
-            set_mem(--SP,((PC & 0xFF00) >> 8));
-            set_mem(--SP,(PC & 0xFF) );
-
+        set_mem(--SP,(PC >> 8) & 0xFF);
+        set_mem(--SP,(PC & 0xFF) );
         PC = 0x30;
         break;
     case 0xF8://Add signed immediate to SP and save result in HL
-        signed_tmp = (signed char)get_mem(PC++);
-        tmp = (SP + signed_tmp);
-        H = ((tmp & 0xFF00) >> 8);
+        tmp = SP + (signed char)get_mem(PC++);
+        H = (tmp >> 8) & 0xFF;
         L = tmp & 0xFF;
         break;
     case 0xF9://copy HL to SP
@@ -1545,10 +1554,10 @@ void cpu_step(u8 opcode){
         break;
     case 0xFA://load A from given address
         A = get_mem(u8_to_u16(get_mem(PC+1),get_mem(PC)));
-        PC+=2;
+        PC += 2;
         break;
     case 0xFB://enable interrupts
-        printf("enable interrupts\n");
+        printf("enable cpu interrupts\n");
         interrupts = 1;
         break;
     case 0xFC://not used
@@ -1556,33 +1565,27 @@ void cpu_step(u8 opcode){
     case 0xFD://not used
         break;
     case 0xFE://compare 8 bit immediate against A
-        comp_8(A,get_mem(PC++));
+        comp_8(A, get_mem(PC++));
         break;
-    case 0xFF://call routine at 0x0038
-        //SP-=2;
-        //set_mem_16(SP,PC);
-            set_mem(--SP,((PC & 0xFF00) >> 8));
-            set_mem(--SP,(PC & 0xFF) );
-
+    case 0xFF://call routine at 0x38
+        set_mem(--SP,(PC >> 8) & 0xFF);
+        set_mem(--SP,(PC & 0xFF) );
         PC = 0x38;
         break;
 
     default:
         printf("%X Not implemented yet\n",opcode);
         break;
-    }// end switch
+    }
     cpu_time += t[opcode];
     op_time += t[opcode];
 }
 
 void vblank_interrupt(){
-    printf("entering interrupt\n");
+    printf("entering vblank interrupt\n");
     interrupts = 0;
-    //SP-=2;
-            set_mem(--SP,((PC & 0xFF00) >> 8));
-            set_mem(--SP,(PC & 0xFF) );
-
-            //set_mem_16(SP,PC);//save program counter to stack
+    set_mem(--SP,(PC >> 8) & 0xFF);
+    set_mem(--SP,(PC & 0xFF) );
     PC=0x0040;
     cpu_time += 12;
 }
@@ -1591,7 +1594,7 @@ void interrupt_return(){
     printf("exiting interrupt\n");
     interrupts = 1;
     PC = u8_to_u16(get_mem(SP+1),get_mem(SP));
-    SP+=2;
+    SP += 2;
     cpu_time += 12;
 }
 void print_cpu(){
@@ -1605,7 +1608,7 @@ void cpu_init(){
     A = B = C = D = E = H = L = F = 0;
     PC = 0;
     SP = 0;
-    interrupts = 1;
+    interrupts = 0;
     cpu_time = 0;
     cpu_halt=0;
     op_time=0;
