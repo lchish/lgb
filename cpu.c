@@ -849,9 +849,203 @@ void cb_opcodes(const u8 opcode){
     case 0x87://Clear bit zero of A
         A &= 0xFE;
         break;
+
+    case 0xC0://Set bit 0 of B
+      B |= 0x01;
+      break;
+    case 0xC1://Set bit 0 of C
+      C |= 0x01;
+      break;
+    case 0xC2://Set bit 0 of D
+      D |= 0x01;
+      break;
+    case 0xC3://Set bit 0 of E
+      E |= 0x01;
+      break;
+    case 0xC4://Set bit 0 of H
+      H |= 0x01;
+      break;
+    case 0xC5://Set bit 0 of L
+      L |= 0x01;
+      break;
+    case 0xC6://Set bit 0 of address at HF
+      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x01));
+      break;
+    case 0xC7://Set bit 0 of A
+      A |= 0x01;
+      break;
+    case 0xC8://Set bit 1 of B
+      B |= 0x02;
+      break;
+    case 0xC9://Set bit 1 of C
+      C |= 0x02;
+      break;
+    case 0xCA://Set bit 1 of D
+      D |= 0x02;
+      break;
+    case 0xCB://Set bit 1 of E
+      E |= 0x02;
+      break;
+    case 0xCC://Set bit 1 of H
+      H |= 0x02;
+      break;
+    case 0xCD://Set bit 1 of L
+      L |= 0x02;
+      break;
+    case 0xCE://Set bit 1 of address at HF
+      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x02));
+      break;
     case 0xCF://Set bit 1 of A
-        A|=0x02;
-        break;
+      A |= 0x02;
+      break;
+
+    case 0xD0://Set bit 2 of B
+      B |= 0x04;
+      break;
+    case 0xD1://Set bit 2 of C
+      C |= 0x04;
+      break;
+    case 0xD2://Set bit 2 of D
+      D |= 0x04;
+      break;
+    case 0xD3://Set bit 2 of E
+      E |= 0x04;
+      break;
+    case 0xD4://Set bit 2 of H
+      H |= 0x04;
+      break;
+    case 0xD5://Set bit 2 of L
+      L |= 0x04;
+      break;
+    case 0xD6://Set bit 2 of address at HF
+      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x04));
+      break;
+    case 0xD7://Set bit 2 of A
+      A |= 0x04;
+      break;
+    case 0xD8://Set bit 3 of B
+      B |= 0x08;
+      break;
+    case 0xD9://Set bit 3 of C
+      C |= 0x08;
+      break;
+    case 0xDA://Set bit 3 of D
+      D |= 0x08;
+      break;
+    case 0xDB://Set bit 3 of E
+      E |= 0x08;
+      break;
+    case 0xDC://Set bit 3 of H
+      H |= 0x08;
+      break;
+    case 0xDD://Set bit 3 of L
+      L |= 0x08;
+      break;
+    case 0xDE://Set bit 3 of address at HF
+      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x08));
+      break;
+    case 0xDF://Set bit 3 of A
+      A |= 0x08;
+      break;
+
+    case 0xE0://Set bit 4 of B
+      B |= 0x10;
+      break;
+    case 0xE1://Set bit 4 of C
+      C |= 0x10;
+      break;
+    case 0xE2://Set bit 4 of D
+      D |= 0x10;
+      break;
+    case 0xE3://Set bit 4 of E
+      E |= 0x10;
+      break;
+    case 0xE4://Set bit 4 of H
+      H |= 0x10;
+      break;
+    case 0xE5://Set bit 4 of L
+      L |= 0x10;
+      break;
+    case 0xE6://Set bit 4 of address at HF
+      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x10));
+      break;
+    case 0xE7://Set bit 4 of A
+      A |= 0x10;
+      break;
+    case 0xE8://Set bit 5 of B
+      B |= 0x20;
+      break;
+    case 0xE9://Set bit 5 of C
+      C |= 0x20;
+      break;
+    case 0xEA://Set bit 5 of D
+      D |= 0x20;
+      break;
+    case 0xEB://Set bit 5 of E
+      E |= 0x20;
+      break;
+    case 0xEC://Set bit 5 of H
+      H |= 0x20;
+      break;
+    case 0xED://Set bit 5 of L
+      L |= 0x20;
+      break;
+    case 0xEE://Set bit 5 of address at HF
+      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x20));
+      break;
+    case 0xEF://Set bit 5 of A
+      A |= 0x20;
+      break;
+
+    case 0xF0://Set bit 6 of B
+      B |= 0x40;
+      break;
+    case 0xF1://Set bit 6 of C
+      C |= 0x40;
+      break;
+    case 0xF2://Set bit 6 of D
+      D |= 0x40;
+      break;
+    case 0xF3://Set bit 6 of E
+      E |= 0x40;
+      break;
+    case 0xF4://Set bit 6 of H
+      H |= 0x40;
+      break;
+    case 0xF5://Set bit 6 of L
+      L |= 0x40;
+      break;
+    case 0xF6://Set bit 6 of address at HF
+      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x40));
+      break;
+    case 0xF7://Set bit 6 of A
+      A |= 0x40;
+      break;
+    case 0xF8://Set bit 7 of B
+      B |= 0x80;
+      break;
+    case 0xF9://Set bit 7 of C
+      C |= 0x80;
+      break;
+    case 0xFA://Set bit 7 of D
+      D |= 0x80;
+      break;
+    case 0xFB://Set bit 7 of E
+      E |= 0x80;
+      break;
+    case 0xFC://Set bit 7 of H
+      H |= 0x80;
+      break;
+    case 0xFD://Set bit 7 of L
+      L |= 0x80;
+      break;
+    case 0xFE://Set bit 7 of address at HF
+      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x80));
+      break;
+    case 0xFF://Set bit 7 of A
+      A |= 0x80;
+      break;
+
     default:
         printf("CB opcode 0x%X not implemented yet\n",opcode);
         break;
