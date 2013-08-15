@@ -1,0 +1,5 @@
+*.gcov
+*.o
+*.gcda
+*.gcno
+lgb

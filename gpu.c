@@ -118,13 +118,13 @@ u8 get_lcd_control_register(){
 
 void update_tile(const u16 address){
     unsigned int addy = address,tile_num,y,sx,x;
-    if(address&1)addy--;
-    tile_num = ((addy - 0x8000)>>4);
-    y=(addy>>1)&7;
-    for(x=0;x<8;x++){
-        sx=(1<<(7-x));
+    if(address & 1)addy--;
+    tile_num = ((addy - 0x8000) >> 4);
+    y=(addy >> 1) & 7;
+    for(x = 0;x < 8;x++){
+        sx=(1 << (7 - x));
         gpu->tiles[tile_num][y][x] = (get_mem(addy) & sx) ?1:0 | 
-            (get_mem(addy+1) & sx)?2:0;
+            (get_mem(addy + 1) & sx)?2:0;
     }
 }
 void update_sprite(const u16 address){

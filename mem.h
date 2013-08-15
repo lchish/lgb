@@ -17,6 +17,7 @@ typedef struct{
     u8 vram[0x2000];
     u8 eram[0x2000];
     u8 wram[0x2000];
+    u8 oam[0xA0];
     u8 zram[0x80];
     u8 interrupt_enable;
     u8 interrupt_flags;

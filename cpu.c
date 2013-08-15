@@ -51,40 +51,72 @@ static inline void unset_halfcarry(){
     F &= 0xDF;
 }
 static inline void set_carry(){
-    F|= 0x10;
+    F |= 0x10;
 }
 static inline void unset_carry(){
     F &= 0xEF;
 }
 static inline void reset_flags(){
-    F=0;
+    F = 0;
 }
 //arithmetic operations
 static inline u8 inc_8(const u8 to_inc){
-    if(to_inc == 255) { set_zero();return 0;}
-    else unset_zero();
-    return to_inc+1;
+    unset_subtract();
+    unset_halfcarry();
+    unset_zero();
+    if((to_inc & 0xF) == 0xF)
+        set_halfcarry();
+    if(to_inc == 0xFF){
+        set_zero();
+        return 0;
+    }
+    return to_inc + 1;
 }
 static inline u8 dec_8(const u8 to_dec){
-    if(to_dec == 1){ set_zero(); return 0;}
-    else  unset_zero();
-    return to_dec == 0 ? 255 : to_dec - 1;
+    set_subtract();
+    unset_halfcarry();
+    unset_zero();
+    if((to_dec & 0xF) == 0) set_halfcarry();
+    if(to_dec == 1){
+        set_zero();
+        return 0;
+    }
+    return to_dec == 0 ? 0xFF : to_dec - 1;
 }
 static inline u8 add_8(const u8 a,const u8 b){
     unsigned int ret = a + b;
+    reset_flags();
     if(!(ret & 0xFF)) set_zero();
-    else unset_zero();
     if(ret > 0xFF) set_carry();
-    else unset_carry();
+    if((a & 0xF) + (b & 0xF) > 0xF) set_halfcarry();
+    return ret & 0xFF;
+}
+static inline u8 add_8c(const u8 a,const u8 b){//also add carry flag
+  unsigned int ret = ((F >> 4) & 1) + b + a;
+  reset_flags();
+  if(!(ret & 0xFF)) set_zero();
+  if(ret > 0xFF) set_carry();
+  if((a & 0xF) + ((F >> 4) & 1) + (b & 0xF) > 0xF) set_halfcarry();
     return ret & 0xFF;
 }
 static inline u8 sub_8(const u8 a,const u8 b){
-    unsigned int ret = a - b;
+    u8 ret = (a - b) & 0xFF;
+    reset_flags();
+    set_subtract();
     if(!(ret & 0xFF)) set_zero();
-    else unset_zero();
     if(a - b < 0) set_carry();
-    else unset_carry();
-    return ret & 0xFF;
+    if((a & 0xF) - (b & 0xF) < 0) set_halfcarry();
+    return ret;
+}
+
+static inline u8 sub_8c(const u8 a,const u8 b){
+  u8 ret = (a - ((F >> 4) & 1) - b) & 0xFF;
+    reset_flags();
+    set_subtract();
+    if(!ret) set_zero();
+    if(a - ((F >> 4) & 1) - b < 0) set_carry();
+    if((a & 0xF) - ((F >> 4) & 1) - (b & 0xF) < 0) set_halfcarry();
+    return ret;
 }
 static inline u16 inc_16(const u16 to_inc){  //sets no flags
     return (to_inc + 1) & 0xFFFF;
@@ -107,15 +139,19 @@ static inline void dec_mem(const u16 address){
     else unset_zero();
 }
 static inline u16 add_16(const u16 a,const u16 b){
+    unset_subtract();
+    unset_halfcarry();
+    unset_carry();
     unsigned int ret = (a + b);
-    if(ret > 0xFFFF)set_carry();
-    else unset_carry();
+    if(ret > 0xFFFF) set_carry();
+    if((a & 0x07FF) + (b & 0x07FF) > 0x07FF) set_halfcarry();
     return ret & 0xFFFF;
 }
-//logick
+//logic
 static inline u8 and_8(const u8 a,const u8 b){
     u8 ret = a & b;
     reset_flags();
+    set_halfcarry();
     if(!ret) set_zero();
     return ret;
 }
@@ -136,470 +172,677 @@ static inline u8 xor_8(const u8 a,const u8 b){
  * These rotate functions should compile into actual rotate instructions on 
  * the cpu with an appropriate compiler.
  */
-static unsigned int _rotlc(const unsigned int value, int shift) {
+static unsigned int _rotl(const unsigned int value, int shift) {
     if ((shift &= sizeof(value)*8 - 1) == 0)
         return value;
     return (value << shift) | (value >> (sizeof(value)*8 - shift));
 }
-static unsigned int _rotl(const unsigned int value, int shift) {
-    if ((shift &= sizeof(value)*8 - 1) == 0)
-        return value;
-    return (value << shift);
-}
 
-static unsigned int _rotrc(const unsigned int value, int shift) {
+static unsigned int _rotr(const unsigned int value, int shift) {
     if ((shift &= sizeof(value)*8 - 1) == 0)
         return value;
     return (value >> shift) | (value << (sizeof(value)*8 - shift));
 }
-static unsigned int _rotr(const unsigned int value, int shift) {
-    if ((shift &= sizeof(value)*8 - 1) == 0)
-        return value;
-    return (value >> shift);
-}
+
 static inline u8 rot_left_carry_8(const u8 a){
-    u8 ret;
-    reset_flags();
-    if(a & 0x80) set_carry();
-    ret = _rotlc(a,1) & 0xFF;
-    if(!ret)set_zero();
-    return ret;
+  reset_flags();
+  if(a & 0x80) set_carry();
+  return ((a << 1) | (a >> 7)) & 0xFF;
 }
 static inline u8 rot_left_8(const u8 a){
     u8 ret;
     ret = (_rotl(a,1) + (F & 0x10 ? 0x01 : 0)) & 0xFF;
     reset_flags();
     if (a & 0x80) set_carry();
-    if(!ret) set_zero();
     return ret;
 }
 static inline u8 rot_right_carry_8(const u8 a){
-    u8 ret;
     reset_flags();
-    if(a & 0x01)set_carry();
-    ret = _rotrc(a,1) & 0xFF;
-    if(!ret)set_zero();
-    return ret;
+    if (a & 0x01) set_carry();
+    return ((a >> 1) | (a << 7)) & 0xFF;
 }
 static inline u8 rot_right_8(const u8 a){
     u8 ret;
     ret = (_rotr(a,1) + (F & 0x10 ? 0x80 : 0)) & 0xFF;
     reset_flags();
     if (a & 0x01) set_carry();
-    if(!ret) set_zero();
     return ret ;
 }
 //compare
 static inline void comp_8(const u8 a,const u8 b){
     int ret = a - b;
     reset_flags();
+    set_subtract();
     if(!ret) set_zero();
     if(ret < 0) set_carry();
+    if((a & 0xF) - (b & 0xF ) < 0) set_halfcarry();
 }
 
 void cb_opcodes(const u8 opcode){
-    u16 tmp;
+    u16 tmp_address;
 
     switch(opcode){
     case 0x00://Rotate B left with carry
         B = rot_left_carry_8(B);
+	if(!B) set_zero();
         break;
     case 0x01://Rotate C left with carry
         C = rot_left_carry_8(C);
+	if(!C) set_zero();
         break;
     case 0x02://Rotate D left with carry
         D = rot_left_carry_8(D);
+	if(!D) set_zero();
         break;
     case 0x03://Rotate E left with carry
         E = rot_left_carry_8(E);
+	if(!E) set_zero();
         break;
     case 0x04://Rotate H left with carry
         H = rot_left_carry_8(H);
+	if(!H) set_zero();
         break;
     case 0x05://Rotate L left with carry
         L = rot_left_carry_8(L);
+	if(!L) set_zero();
         break;
     case 0x06://Rotate value pointed by HL left with carry
-        tmp = u8_to_u16(H,L);
-        set_mem(tmp,rot_left_carry_8(get_mem(tmp)));
+        tmp_address = u8_to_u16(H,L);
+        set_mem(tmp_address,rot_left_carry_8(get_mem(tmp_address)));
         break;
     case 0x07://Rotate A left with carry
         A = rot_left_carry_8(A);
+	if(!A) set_zero();
         break;
     case 0x08://Rotate B right with carry
         B = rot_right_carry_8(B);
+	if(!B) set_zero();
         break;
     case 0x09://Rotate C right with carry
         C = rot_right_carry_8(C);
+	if(!C) set_zero();
         break;
     case 0x0A://Rotate D right with carry
         D = rot_right_carry_8(D);
+	if(!D) set_zero();
         break;
     case 0x0B://Rotate E right with carry
         E = rot_right_carry_8(E);
+	if(!E) set_zero();
         break;
     case 0x0C://Rotate H right with carry
         H = rot_right_carry_8(H);
+	if(!H) set_zero();
         break;
     case 0x0D://Rotate L right with carry
         L = rot_right_carry_8(L);
+	if(!L) set_zero();
         break;
     case 0x0E://Rotate value pointed by HL right with carry
-        tmp = u8_to_u16(H,L);
-        set_mem(tmp,rot_right_carry_8(get_mem(tmp)));
+        tmp_address = u8_to_u16(H,L);
+        set_mem(tmp_address,rot_right_carry_8(get_mem(tmp_address)));
         break;
     case 0x0F://Rotate A right with carry
         A = rot_right_carry_8(A);
+	if(!A) set_zero();
         break;
 
     case 0x10://Rotate B left
         B = rot_left_8(B);
+        if(!B) set_zero();
         break;
     case 0x11://Rotate C left
         C = rot_left_8(C);
+        if(!C) set_zero();
         break;
     case 0x12://Rotate D left
         D = rot_left_8(D);
+        if(!D) set_zero();
         break;
     case 0x13://Rotate E left
         E = rot_left_8(E);
+        if(!E) set_zero();
         break;
     case 0x14://Rotate H left
         H = rot_left_8(H);
+        if(!H) set_zero();
         break;
     case 0x15://Rotate L left
         L = rot_left_8(L);
+        if(!L) set_zero();
         break;
     case 0x16://Rotate value pointed by HL left
-        tmp = u8_to_u16(H,L);
-        set_mem(tmp,rot_left_8(get_mem(tmp)));
+        tmp_address = u8_to_u16(H,L);
+        set_mem(tmp_address,rot_left_8(get_mem(tmp_address)));
+        if(!get_mem(tmp_address)) set_zero();
         break;
     case 0x17://Rotate A left
         A = rot_left_8(A);
+        if(!A) set_zero();
         break;
     case 0x18://Rotate B right
         B = rot_right_8(B);
+        if(!B) set_zero();
         break;
     case 0x19://Rotate C right
         C = rot_right_8(C);
+        if(!C) set_zero();
         break;
     case 0x1A://Rotate D right
         D = rot_right_8(D);
+        if(!D) set_zero();
         break;
     case 0x1B://Rotate E right
         E = rot_right_8(E);
+        if(!E) set_zero();
         break;
     case 0x1C://Rotate H right
         H = rot_right_8(H);
+        if(!H) set_zero();
         break;
     case 0x1D://Rotate L right
         L = rot_right_8(L);
+        if(!L) set_zero();
         break;
     case 0x1E://Rotate value pointed by HL right
-        tmp = u8_to_u16(H,L);
-        set_mem(tmp,rot_right_8(get_mem(tmp)));
+        tmp_address = u8_to_u16(H,L);
+        set_mem(tmp_address,rot_right_8(get_mem(tmp_address)));
+        if(!get_mem(tmp_address)) set_zero();
         break;
     case 0x1F://Rotate A right
         A = rot_right_8(A);
+        if(!A) set_zero();
         break;
 
+    case 0x20://Shift B left into carry LSB set to 0
+        reset_flags();
+        if(B & 0x80)
+            set_carry();
+        B = (B << 1) & 0xFF;
+        if(!B)
+            set_zero();
+        break;
+    case 0x21://Shift C left into carry LSB set to 0
+        reset_flags();
+        if(C & 0x80)
+            set_carry();
+        C = (C << 1) & 0xFF;
+        if(!C)
+            set_zero();
+        break;
+    case 0x22://Shift D left into carry LSB set to 0
+        reset_flags();
+        if(D & 0x80)
+            set_carry();
+        D = (D << 1) & 0xFF;
+        if(!D)
+            set_zero();
+        break;
+    case 0x23://Shift E left into carry LSB set to 0
+        reset_flags();
+        if(E & 0x80)
+            set_carry();
+        E = (E << 1) & 0xFF;
+        if(!E)
+            set_zero();
+        break;
+    case 0x24://Shift H left into carry LSB set to 0
+        reset_flags();
+        if(H & 0x80)
+            set_carry();
+        H = (H << 1) & 0xFF;
+        if(!H)
+            set_zero();
+        break;
+    case 0x25://Shift L left into carry LSB set to 0
+        reset_flags();
+        if(L & 0x80)
+            set_carry();
+        L = (L << 1) & 0xFF;
+        if(!L)
+            set_zero();
+        break;
+    case 0x26://Shift value pointed to by HL left into carry LSB set to 0
+        reset_flags();
+        tmp_address = u8_to_u16(H,L);
+        if(get_mem(tmp_address) & 0x80)
+            set_carry();
+        set_mem(tmp_address, (get_mem(tmp_address) << 1) & 0xFF);
+        if(!get_mem(tmp_address))
+            set_zero();
+        break;
     case 0x27://Shift n left into carry LSB set to 0
+        reset_flags();
         if(A & 0x80)
             set_carry();
-        else
-            unset_carry();
         A = (A << 1) & 0xFF;
         if(!A)
             set_zero();
-        else
-            unset_zero();
         break;
-
-    case 0x37://swap nibbles in A
-        A = (( (A & 0xF0) >> 4) & 0x0F) | (( (A & 0x0F) << 4 ) & 0xF0);
-        if(!A)set_zero();
-        else unset_zero();
-        break;
-    case 0x38://shift b right
+    case 0x28://Shift B right into carry. MSB doesn't change
+        reset_flags();
         if(B & 1)
             set_carry();
-        else
-            unset_carry();
+        B = (B >> 1) | (B & 0x80);
+        if(!B)
+            set_zero();
+        break;
+    case 0x29://Shift C right into carry. MSB doesn't change
+        reset_flags();
+        if(C & 1)
+            set_carry();
+        C = (C >> 1) | (C & 0x80);
+        if(!C)
+            set_zero();
+        break;
+    case 0x2A://Shift D right into carry. MSB doesn't change
+        reset_flags();
+        if(D & 1)
+            set_carry();
+        D = (D >> 1) | (D & 0x80);
+        if(!D)
+            set_zero();
+        break;
+    case 0x2B://Shift E right into carry. MSB doesn't change
+        reset_flags();
+        if(E & 1)
+            set_carry();
+        E = (E >> 1) | (E & 0x80);
+        if(!E)
+            set_zero();
+        break;
+    case 0x2C://Shift H right into carry. MSB doesn't change
+        reset_flags();
+        if(H & 1)
+            set_carry();
+        H = (H >> 1) | (H & 0x80);
+        if(!H)
+            set_zero();
+        break;
+    case 0x2D://Shift L right into carry. MSB doesn't change
+        reset_flags();
+        if(L & 1)
+            set_carry();
+        L = (L >> 1) | (L & 0x80);
+        if(!L)
+            set_zero();
+        break;
+    case 0x2E://Shift memory at HL right into carry. MSB doesn't change
+        reset_flags();
+        tmp_address = u8_to_u16(H,L);
+        if(get_mem(tmp_address) & 1)
+            set_carry();
+        set_mem(tmp_address, (get_mem(tmp_address) >> 1) | (get_mem(tmp_address) & 0x80));
+        if(!get_mem(tmp_address))
+            set_zero();
+        break;
+    case 0x2F://Shift A right into carry. MSB doesn't change
+        reset_flags();
+        if(A & 1)
+            set_carry();
+        A = (A >> 1) | (A & 0x80);
+        if(!A)
+            set_zero();
+        break;
+
+    case 0x30://swap nibbles in B
+        reset_flags();
+        B = (((B & 0xF0) >> 4) & 0x0F) | (((B & 0x0F) << 4 ) & 0xF0);
+        if(!B)set_zero();
+        break;
+    case 0x31://swap nibbles in C
+        reset_flags();
+        C = (((C & 0xF0) >> 4) & 0x0F) | (((C & 0x0F) << 4 ) & 0xF0);
+        if(!C)set_zero();
+        break;
+    case 0x32://swap nibbles in D
+        reset_flags();
+        D = (((D & 0xF0) >> 4) & 0x0F) | (((D & 0x0F) << 4 ) & 0xF0);
+        if(!D)set_zero();
+        break;
+    case 0x33://swap nibbles in E
+        reset_flags();
+        E = (((E & 0xF0) >> 4) & 0x0F) | (((E & 0x0F) << 4 ) & 0xF0);
+        if(!E)set_zero();
+        break;
+    case 0x34://swap nibbles in H
+        reset_flags();
+        H = (((H & 0xF0) >> 4) & 0x0F) | (((H & 0x0F) << 4 ) & 0xF0);
+        if(!H)set_zero();
+        break;
+    case 0x35://swap nibbles in L
+        reset_flags();
+        L = (((L & 0xF0) >> 4) & 0x0F) | (((L & 0x0F) << 4 ) & 0xF0);
+        if(!L)set_zero();
+        break;
+    case 0x37://swap nibbles in A
+        reset_flags();
+        A = (((A & 0xF0) >> 4) & 0x0F) | (((A & 0x0F) << 4 ) & 0xF0);
+        if(!A)set_zero();
+        break;
+    case 0x38://shift b right
+        reset_flags();
+        if(B & 1)
+            set_carry();
         B = (B >> 1) & 0xFF;
         if(!B)
             set_zero();
-        else
-            unset_zero();
+        break;
+    case 0x39://shift C right
+        reset_flags();
+        if(C & 1)
+            set_carry();
+        C = (C >> 1) & 0xFF;
+        if(!C)
+            set_zero();
+        break;
+    case 0x3A://shift D right
+        reset_flags();
+        if(D & 1)
+            set_carry();
+        D = (D >> 1) & 0xFF;
+        if(!D)
+            set_zero();
+        break;
+    case 0x3B://shift E right
+        reset_flags();
+        if(E & 1)
+            set_carry();
+        E = (E >> 1) & 0xFF;
+        if(!E)
+            set_zero();
+        break;
+    case 0x3C://shift H right
+        reset_flags();
+        if(H & 1)
+            set_carry();
+        H = (H >> 1) & 0xFF;
+        if(!H)
+            set_zero();
+        break;
+    case 0x3D://shift L right
+        reset_flags();
+        if(L & 1)
+            set_carry();
+        L = (L >> 1) & 0xFF;
+        if(!L)
+            set_zero();
+        break;
+    case 0x3E://shift memory at HL right
+        reset_flags();
+        tmp_address = u8_to_u16(H,L);
+        if(get_mem(tmp_address) & 1)
+            set_carry();
+        set_mem(tmp_address, (get_mem(tmp_address) >> 1) & 0xFF);
+        if(!get_mem(tmp_address))
+            set_zero();
         break;
     case 0x3F://shift A right
+        reset_flags();
         if(A & 1)
             set_carry();
-        else
-            unset_carry();
         A = (A >> 1) & 0xFF;
-        if(!B)
+        if(!A)
             set_zero();
-        else
-            unset_zero();
         break;
 
     case 0x40://Test bit 0 of B
-        if(!(B&0x01))set_zero();
+        if(!(B & 0x01))set_zero();
         else unset_zero();
         break;
     case 0x41://Test bit 0 of C
-        if(!(C&0x01))set_zero();
+        if(!(C & 0x01))set_zero();
         else unset_zero();
         break; 
     case 0x42://Test bit 0 of D
-        if(!(D&0x01))set_zero();
+        if(!(D & 0x01))set_zero();
         else unset_zero();
         break;
     case 0x43://Test bit 0 of E
-        if(!(E&0x01))set_zero();
+        if(!(E & 0x01))set_zero();
         else unset_zero();
         break;
     case 0x44://Test bit 0 of H
-        if(!(H&0x01))set_zero();
+        if(!(H & 0x01))set_zero();
         else unset_zero();
         break;
     case 0x45://Test bit 0 of L
-        if(!(L&0x01))set_zero();
+        if(!(L & 0x01))set_zero();
         else unset_zero();
         break;
     case 0x46://Test bit 0 of value pointed to by HL
-        if(!(get_mem(u8_to_u16(H,L))&0x01))set_zero();
+        if(!(get_mem(u8_to_u16(H,L)) & 0x01)) set_zero();
         else unset_zero();
         break;
     case 0x47://Test bit 0 of A
-        if(!(A&0x01))set_zero();
+        if(!(A & 0x01))set_zero();
         else unset_zero();
         break;
     case 0x48://Test bit 1 of B
-        if(!(B&0x02))set_zero();
+        if(!(B & 0x02))set_zero();
         else unset_zero();
         break;
     case 0x49://Test bit 1 of C
-        if(!(C&0x02))set_zero();
+        if(!(C & 0x02))set_zero();
         else unset_zero();
         break;
     case 0x4A://Test bit 1 of D
-        if(!(D&0x02))set_zero();
+        if(!(D & 0x02))set_zero();
         else unset_zero();
         break;
     case 0x4B://Test bit 1 of E
-        if(!(E&0x02))set_zero();
+        if(!(E & 0x02))set_zero();
         else unset_zero();
         break;
     case 0x4C://Test bit 1 of H
-        if(!(H&0x02))set_zero();
+        if(!(H & 0x02))set_zero();
         else unset_zero();
         break;
     case 0x4D://Test bit 1 of L
-        if(!(L&0x02))set_zero();
+        if(!(L & 0x02))set_zero();
         else unset_zero();
         break;
     case 0x4E://Test bit 1 of value pointed to by HL
-        if(!(get_mem(u8_to_u16(H,L))&0x02))set_zero();
+        if(!(get_mem(u8_to_u16(H,L)) & 0x02))set_zero();
         else unset_zero();
         break;
     case 0x4F://Test bit 1 of A
-        if(!(A&0x02))set_zero();
+        if(!(A & 0x02))set_zero();
         else unset_zero();
         break;
 
     case 0x50://Test bit 2 of B
-        if(!(B&0x04))set_zero();
+        if(!(B & 0x04))set_zero();
         else unset_zero();
         break;
     case 0x51://Test bit 2 of C
-        if(!(C&0x04))set_zero();
+        if(!(C & 0x04))set_zero();
         else unset_zero();
         break; 
     case 0x52://Test bit 2 of D
-        if(!(D&0x04))set_zero();
+        if(!(D & 0x04))set_zero();
         else unset_zero();
         break;
     case 0x53://Test bit 2 of E
-        if(!(E&0x04))set_zero();
+        if(!(E & 0x04))set_zero();
         else unset_zero();
         break;
     case 0x54://Test bit 2 of H
-        if(!(H&0x04))set_zero();
+        if(!(H & 0x04))set_zero();
         else unset_zero();
         break;
     case 0x55://Test bit 2 of L
-        if(!(L&0x04))set_zero();
+        if(!(L & 0x04))set_zero();
         else unset_zero();
         break;
     case 0x56://Test bit 2 of value pointed to by HL
-        if(!(get_mem(u8_to_u16(H,L))&0x04))set_zero();
+        if(!(get_mem(u8_to_u16(H,L)) & 0x04))set_zero();
         else unset_zero();
         break;
     case 0x57://Test bit 2 of A
-        if(!(A&0x04))set_zero();
+        if(!(A & 0x04))set_zero();
         else unset_zero();
         break;
     case 0x58://Test bit 3 of B
-        if(!(B&0x08))set_zero();
+        if(!(B & 0x08))set_zero();
         else unset_zero();
         break;
     case 0x59://Test bit 3 of C
-        if(!(C&0x08))set_zero();
+        if(!(C & 0x08))set_zero();
         else unset_zero();
         break; 
     case 0x5A://Test bit 3 of D
-        if(!(D&0x08))set_zero();
+        if(!(D & 0x08))set_zero();
         else unset_zero();
         break;
     case 0x5B://Test bit 3 of E
-        if(!(E&0x08))set_zero();
+        if(!(E & 0x08))set_zero();
         else unset_zero();
         break;
     case 0x5C://Test bit 3 of H
-        if(!(H&0x08))set_zero();
+        if(!(H & 0x08))set_zero();
         else unset_zero();
         break;
     case 0x5D://Test bit 3 of L
-        if(!(L&0x08))set_zero();
+        if(!(L & 0x08))set_zero();
         else unset_zero();
         break;
     case 0x5E://Test bit 3 of value pointed to by HL
-        if(!(get_mem(u8_to_u16(H,L))&0x08))set_zero();
+        if(!(get_mem(u8_to_u16(H,L)) & 0x08))set_zero();
         else unset_zero();
         break;
     case 0x5F://Test bit 3 of A
-        if(!(A&0x08))set_zero();
+        if(!(A & 0x08))set_zero();
         else unset_zero();
         break;
 
     case 0x60://Test bit 4 of B
-        if(!(B&0x10))set_zero();
+        if(!(B & 0x10))set_zero();
         else unset_zero();
         break;
     case 0x61://Test bit 4 of C
-        if(!(C&0x10))set_zero();
+        if(!(C & 0x10))set_zero();
         else unset_zero();
         break; 
     case 0x62://Test bit 4 of D
-        if(!(D&0x10))set_zero();
+        if(!(D & 0x10))set_zero();
         else unset_zero();
         break;
     case 0x63://Test bit 4 of E
-        if(!(E&0x10))set_zero();
+        if(!(E & 0x10))set_zero();
         else unset_zero();
         break;
     case 0x64://Test bit 4 of H
-        if(!(H&0x10))set_zero();
+        if(!(H & 0x10))set_zero();
         else unset_zero();
         break;
     case 0x65://Test bit 4 of L
-        if(!(L&0x10))set_zero();
+        if(!(L & 0x10))set_zero();
         else unset_zero();
         break;
     case 0x66://Test bit 4 of value pointed to by HL
-        if(!(get_mem(u8_to_u16(H,L))&0x10))set_zero();
+        if(!(get_mem(u8_to_u16(H,L)) & 0x10))set_zero();
         else unset_zero();
         break;
     case 0x67://Test bit 4 of A
-        if(!(A&0x10))set_zero();
+        if(!(A & 0x10))set_zero();
         else unset_zero();
         break;
     case 0x68://Test bit 5 of B
-        if(!(B&0x20))set_zero();
+        if(!(B & 0x20))set_zero();
         else unset_zero();
         break;
     case 0x69://Test bit 5 of C
-        if(!(C&0x20))set_zero();
+        if(!(C & 0x20))set_zero();
         else unset_zero();
         break; 
     case 0x6A://Test bit 5 of D
-        if(!(D&0x20))set_zero();
+        if(!(D & 0x20))set_zero();
         else unset_zero();
         break;
     case 0x6B://Test bit 5 of E
-        if(!(E&0x20))set_zero();
+        if(!(E & 0x20))set_zero();
         else unset_zero();
         break;
     case 0x6C://Test bit 5 of H
-        if(!(H&0x20))set_zero();
+        if(!(H & 0x20))set_zero();
         else unset_zero();
         break;
     case 0x6D://Test bit 5 of L
-        if(!(L&0x20))set_zero();
+        if(!(L & 0x20))set_zero();
         else unset_zero();
         break;
     case 0x6E://Test bit 5 of value pointed to by HL
-        if(!(get_mem(u8_to_u16(H,L))&0x20))set_zero();
+        if(!(get_mem(u8_to_u16(H,L)) & 0x20))set_zero();
         else unset_zero();
         break;
     case 0x6F://Test bit 5 of A
-        if(!(A&0x20))set_zero();
+        if(!(A & 0x20))set_zero();
         else unset_zero();
         break;
 
     case 0x70://Test bit 6 of B
-        if(!(B&0x40))set_zero();
+        if(!(B & 0x40))set_zero();
         else unset_zero();
         break;
     case 0x71://Test bit 6 of C
-        if(!(C&0x40))set_zero();
+        if(!(C & 0x40))set_zero();
         else unset_zero();
         break; 
     case 0x72://Test bit 6 of D
-        if(!(D&0x40))set_zero();
+        if(!(D & 0x40))set_zero();
         else unset_zero();
         break;
     case 0x73://Test bit 6 of E
-        if(!(E&0x40))set_zero();
+        if(!(E & 0x40))set_zero();
         else unset_zero();
         break;
     case 0x74://Test bit 6 of H
-        if(!(H&0x40))set_zero();
+        if(!(H & 0x40))set_zero();
         else unset_zero();
         break;
     case 0x75://Test bit 6 of L
-        if(!(L&0x40))set_zero();
+        if(!(L & 0x40))set_zero();
         else unset_zero();
         break;
     case 0x76://Test bit 6 of value pointed to by HL
-        if(!(get_mem(u8_to_u16(H,L))&0x40))set_zero();
+        if(!(get_mem(u8_to_u16(H,L)) & 0x40))set_zero();
         else unset_zero();
         break;
     case 0x77://Test bit 6 of A
-        if(!(A&0x40))set_zero();
+        if(!(A & 0x40))set_zero();
         else unset_zero();
         break;
     case 0x78://Test bit 7 of B
-        if(!(B&0x80))set_zero();
+        if(!(B & 0x80))set_zero();
         else unset_zero();
         break;
     case 0x79://Test bit 7 of C
-        if(!(C&0x80))set_zero();
+        if(!(C & 0x80))set_zero();
         else unset_zero();
         break; 
     case 0x7A://Test bit 7 of D
-        if(!(D&0x80))set_zero();
+        if(!(D & 0x80))set_zero();
         else unset_zero();
         break;
     case 0x7B://Test bit 7 of E
-        if(!(E&0x80))set_zero();
+        if(!(E & 0x80))set_zero();
         else unset_zero();
         break;
     case 0x7C://Test bit 7 of H
-        if(!(H&0x80))set_zero();
+        if(!(H & 0x80))set_zero();
         else unset_zero();
         break;
     case 0x7D://Test bit 7 of L
-        if(!(L&0x80))set_zero();
+        if(!(L & 0x80))set_zero();
         else unset_zero();
         break;
     case 0x7E://Test bit 7 of value pointed to by HL
-        if(!(get_mem(u8_to_u16(H,L))&0x80))set_zero();
+        if(!(get_mem(u8_to_u16(H,L)) & 0x80))set_zero();
         else unset_zero();
         break;
     case 0x7F://Test bit 7 of A
-        if(!(A&0x80))set_zero();
+        if(!(A & 0x80))set_zero();
         else unset_zero();
         break;
 
@@ -647,7 +890,6 @@ void cpu_step(u8 opcode){
         break;
     case 0x07:// rotate left through carry accumulator
         A = rot_left_carry_8(A);
-        unset_zero();
         break;
     case 0x08://save sp to a given address
         tmp = (get_mem(PC+1) << 8) + get_mem(PC);
@@ -679,10 +921,9 @@ void cpu_step(u8 opcode){
         break;
     case 0x0F://rotate right carry accumulator
         A = rot_right_carry_8(A);
-        unset_zero();
         break;
 
-    case 0x10://STOP
+    case 0x10://Stop cpu and lcd until a button is pressed
         printf("Processor stopping\n");
         cpu_stop =1;
         break;
@@ -707,7 +948,7 @@ void cpu_step(u8 opcode){
     case 0x16://Load immediate into D
         D = get_mem(PC++);
         break;
-    case 0x17://rotate left accumulator
+    case 0x17://rotate accumulator left
         A = rot_left_8(A);
         break;
     case 0x18://Relative jump by signed immediate
@@ -738,7 +979,6 @@ void cpu_step(u8 opcode){
         break;
     case 0x1F://rotate accumulator right
         A = rot_right_8(A);
-        unset_zero();
         break;
 
     case 0x20://Relative jump by signed immediate if last result was not zero
@@ -849,6 +1089,8 @@ void cpu_step(u8 opcode){
         set_mem(u8_to_u16(H,L),get_mem(PC++));
         break;
     case 0x37://set carry flag
+        unset_subtract();
+        unset_halfcarry();
         set_carry();
         break;
     case 0x38://Relative jump by signed immediate if last result caused a carry
@@ -883,8 +1125,13 @@ void cpu_step(u8 opcode){
     case 0x3E://load 8-bit immediate into A
         A = get_mem(PC++);
         break;
-    case 0x3F://Clear carry flag
-        unset_carry();
+    case 0x3F://Complement carry flag
+        unset_subtract();
+        unset_halfcarry();
+        if(F & 0x10)
+            unset_carry();
+        else
+            set_carry();
         break;
 
     case 0x40://Copy B to B
@@ -1053,6 +1300,7 @@ void cpu_step(u8 opcode){
         set_mem(u8_to_u16(H,L),L);
         break;
     case 0x76://HALT
+        printf("halting cpu");
         cpu_halt = 1;
         break;
     case 0x77://copy A to Address pointed to by HL
@@ -1108,28 +1356,28 @@ void cpu_step(u8 opcode){
         A = add_8(A,A);
         break;
     case 0x88://Add B and carry flag to A
-        A = add_8(A,B + (F&0x10 ? 1:0));
+        A = add_8c(A,B);
         break;
     case 0x89://Add C and carry flag to A
-        A = add_8(A,C + (F&0x10 ? 1:0));
+        A = add_8c(A,C);
         break;
     case 0x8A://Add D and carry flag to A
-        A = add_8(A,D + (F&0x10 ? 1:0));
+        A = add_8c(A,D);
         break;
     case 0x8B://Add E and carry flag to A
-        A = add_8(A,E + (F&0x10 ? 1:0));
+        A = add_8c(A,E);
         break;
     case 0x8C://Add H and carry flag to A
-        A = add_8(A, H+ (F&0x10 ? 1:0));
+        A = add_8c(A,H);
         break;
     case 0x8D://Add L and carry flag to A
-        A = add_8(A,L + (F&0x10 ? 1:0));
+        A = add_8c(A,L);
         break;
     case 0x8E://Add value pointed by HL and carry flag to A
-        A = add_8(A,get_mem(u8_to_u16(H,L)) + (F&0x10 ? 1:0));
+        A = add_8c(A,get_mem(u8_to_u16(H,L)));
         break;
     case 0x8F://Add A and carry flag to A
-        A = add_8(A,A + (F&0x10 ? 1:0));
+        A = add_8c(A,A);
         break;
 
     case 0x90://SUB B from A
@@ -1157,28 +1405,28 @@ void cpu_step(u8 opcode){
         A = sub_8(A,A);
         break;
     case 0x98://SUB B and carry flag from A
-        A = sub_8(A,B + (F&0x10 ? 1:0));
+        A = sub_8c(A,B);
         break;
     case 0x99://SUB C and carry flag from A
-        A = sub_8(A,C + (F&0x10 ? 1:0));
+        A = sub_8c(A,C);
         break;
     case 0x9A://SUB D and carry flag from A
-        A = sub_8(A,D + (F&0x10 ? 1:0));
+        A = sub_8c(A,D);
         break;
     case 0x9B://SUB E and carry flag from A
-        A = sub_8(A,E + (F&0x10 ? 1:0));
+        A = sub_8c(A,E);
         break;
     case 0x9C://SUB H and carry flag from A
-        A = sub_8(A,H + (F&0x10 ? 1:0));
+        A = sub_8c(A,H);
         break;
     case 0x9D://SUB L and carry flag from A
-        A = sub_8(A,L + (F&0x10 ? 1:0));
+        A = sub_8c(A,L);
         break;
     case 0x9E://SUB value pointed by HL and carry flag from A
-        A = sub_8(A,get_mem(u8_to_u16(H,L)) + (F & 0x10 ? 1:0));
+        A = sub_8c(A,get_mem(u8_to_u16(H,L)));
         break;
     case 0x9F://SUB A and carry flag from A
-        A = sub_8(A,A + (F&0x10 ? 1:0));
+        A = sub_8c(A,A);
         break;
     case 0xA0://AND A with B
         A = and_8(A,B);
@@ -1366,7 +1614,7 @@ void cpu_step(u8 opcode){
         PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
         break;
     case 0xCE://ADD immediate and carry to A
-        A = add_8(A,get_mem(PC++) + (F&0x10 ? 1:0));
+        A = add_8c(A,get_mem(PC++));
         break;
     case 0xCF://call routine at 0x0008
         set_mem(--SP,(PC >> 8) & 0xFF);
@@ -1459,7 +1707,7 @@ void cpu_step(u8 opcode){
     case 0xDD://not used
         break;
     case 0xDE://Subtract immediate and carry from A
-        A = sub_8(A,get_mem(PC++) + (F&0x10 ? 1:0));
+        A = sub_8c(A,get_mem(PC++));
         break;
     case 0xDF://call routine at 0x0018
         set_mem(--SP,(PC >> 8) & 0xFF);
@@ -1494,7 +1742,9 @@ void cpu_step(u8 opcode){
         PC = 0x20;
         break;
     case 0xE8://add signed 8bit immediate to SP
-        SP += (signed char)get_mem(PC++);
+        unset_zero();
+        unset_subtract();
+        SP = (SP + (signed char)get_mem(PC++)) & 0xFF;
         break;
     case 0xE9://PC equals HL
         PC = u8_to_u16(H,L);
@@ -1528,7 +1778,7 @@ void cpu_step(u8 opcode){
     case 0xF2://Put value at address $FF00 + register C into A
         A = get_mem(0xFF00 + C);
         break;
-    case 0xF3://Disable interrupts
+    case 0xF3://Disable interrupts. Interrupts are disabled after instruction after this one is executed
         printf("Disabling cpu interrupts\n");
         interrupts = 0;
         break;
@@ -1556,7 +1806,7 @@ void cpu_step(u8 opcode){
         A = get_mem(u8_to_u16(get_mem(PC+1),get_mem(PC)));
         PC += 2;
         break;
-    case 0xFB://enable interrupts
+    case 0xFB://Enable interrupts. Interrupts are enabled after instruction after this one is executed
         printf("enable cpu interrupts\n");
         interrupts = 1;
         break;
@@ -1586,15 +1836,17 @@ void vblank_interrupt(){
     interrupts = 0;
     set_mem(--SP,(PC >> 8) & 0xFF);
     set_mem(--SP,(PC & 0xFF) );
-    PC=0x0040;
+    PC = 0x0040;
+    op_time += 3;
     cpu_time += 12;
 }
 
 void interrupt_return(){
     printf("exiting interrupt\n");
     interrupts = 1;
-    PC = u8_to_u16(get_mem(SP+1),get_mem(SP));
+    PC = u8_to_u16(get_mem(SP + 1),get_mem(SP));
     SP += 2;
+    op_time += 3;
     cpu_time += 12;
 }
 void print_cpu(){
@@ -1624,20 +1876,21 @@ void cpu_run_once(){
 
     printf("opcode: %X\n",get_mem(PC-1));
     gpu_step(op_time);
-    PC &=0xFFFF;
+    PC &= 0xFFFF;
     print_cpu();
 }
 void cpu_run(){
     while(!cpu_exit_loop){
         cpu_step(get_mem(PC++));
         gpu_step(op_time);
-        PC &=0xFFFF;
+        PC &= 0xFFFF;
 
-        /*if( interrupts && memory->interrupt_enable && memory->interrupt_flags){*/
-            if((memory->interrupt_enable & memory->interrupt_flags) & 0x01){
+        if(interrupts && memory->interrupt_enable && memory->interrupt_flags){
+            int fired = memory->interrupt_enable & memory->interrupt_flags;
+            if(fired & 1){
                 memory->interrupt_flags &= (0xFE);
                 vblank_interrupt();
             }
-            /*}*/
+        }
     }
 }
