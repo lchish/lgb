@@ -92,11 +92,11 @@ static inline u8 add_8(const u8 a,const u8 b){
     return ret & 0xFF;
 }
 static inline u8 add_8c(const u8 a,const u8 b){//also add carry flag
-  unsigned int ret = ((F >> 4) & 1) + b + a;
-  reset_flags();
-  if(!(ret & 0xFF)) set_zero();
-  if(ret > 0xFF) set_carry();
-  if((a & 0xF) + ((F >> 4) & 1) + (b & 0xF) > 0xF) set_halfcarry();
+    unsigned int ret = ((F >> 4) & 1) + b + a;
+    reset_flags();
+    if(!(ret & 0xFF)) set_zero();
+    if(ret > 0xFF) set_carry();
+    if((a & 0xF) + ((F >> 4) & 1) + (b & 0xF) > 0xF) set_halfcarry();
     return ret & 0xFF;
 }
 static inline u8 sub_8(const u8 a,const u8 b){
@@ -123,20 +123,6 @@ static inline u16 inc_16(const u16 to_inc){  //sets no flags
 }
 static inline u16 dec_16(const u16 to_dec){
     return (to_dec - 1) & 0xFFFF;
-}
-static inline void inc_mem(const u16 address){
-    u8 value = get_mem(address);
-    value = value == 0xFF ? 0 : value + 1;
-    set_mem(address,value);
-    if(!value)set_zero();
-    else unset_zero();
-}
-static inline void dec_mem(const u16 address){
-    u8 value = get_mem(address);
-    value = value == 0 ? 0xFF : value - 1;
-    set_mem(address,value);
-    if(!value)set_zero();
-    else unset_zero();
 }
 static inline u16 add_16(const u16 a,const u16 b){
     unset_subtract();
@@ -249,6 +235,7 @@ void cb_opcodes(const u8 opcode){
     case 0x06://Rotate value pointed by HL left with carry
         tmp_address = u8_to_u16(H,L);
         set_mem(tmp_address,rot_left_carry_8(get_mem(tmp_address)));
+	if(!get_mem(tmp_address)) set_zero();
         break;
     case 0x07://Rotate A left with carry
         A = rot_left_carry_8(A);
@@ -281,6 +268,7 @@ void cb_opcodes(const u8 opcode){
     case 0x0E://Rotate value pointed by HL right with carry
         tmp_address = u8_to_u16(H,L);
         set_mem(tmp_address,rot_right_carry_8(get_mem(tmp_address)));
+	if(!get_mem(tmp_address)) set_zero();
         break;
     case 0x0F://Rotate A right with carry
         A = rot_right_carry_8(A);
@@ -515,6 +503,11 @@ void cb_opcodes(const u8 opcode){
         L = (((L & 0xF0) >> 4) & 0x0F) | (((L & 0x0F) << 4 ) & 0xF0);
         if(!L)set_zero();
         break;
+    case 0x36://swap nibbles in memory at HL
+        reset_flags();
+        set_mem(u8_to_u16(H,L), ((get_mem(u8_to_u16(H,L)) & 0xF0) >> 4 | (get_mem(u8_to_u16(H,L)) & 0x0F) << 4) & 0xFF);
+        if(!get_mem(u8_to_u16(H,L))) set_zero();
+        break;
     case 0x37://swap nibbles in A
         reset_flags();
         A = (((A & 0xF0) >> 4) & 0x0F) | (((A & 0x0F) << 4 ) & 0xF0);
@@ -587,267 +580,587 @@ void cb_opcodes(const u8 opcode){
         break;
 
     case 0x40://Test bit 0 of B
+        set_halfcarry();
+        unset_subtract();
         if(!(B & 0x01))set_zero();
         else unset_zero();
         break;
     case 0x41://Test bit 0 of C
+        set_halfcarry();
+        unset_subtract();
         if(!(C & 0x01))set_zero();
         else unset_zero();
         break; 
     case 0x42://Test bit 0 of D
+        set_halfcarry();
+        unset_subtract();
         if(!(D & 0x01))set_zero();
         else unset_zero();
         break;
     case 0x43://Test bit 0 of E
+        set_halfcarry();
+        unset_subtract();
         if(!(E & 0x01))set_zero();
         else unset_zero();
         break;
     case 0x44://Test bit 0 of H
+        set_halfcarry();
+        unset_subtract();
         if(!(H & 0x01))set_zero();
         else unset_zero();
         break;
     case 0x45://Test bit 0 of L
+        set_halfcarry();
+        unset_subtract();
         if(!(L & 0x01))set_zero();
         else unset_zero();
         break;
     case 0x46://Test bit 0 of value pointed to by HL
+        set_halfcarry();
+        unset_subtract();
         if(!(get_mem(u8_to_u16(H,L)) & 0x01)) set_zero();
         else unset_zero();
         break;
     case 0x47://Test bit 0 of A
+        set_halfcarry();
+        unset_subtract();
         if(!(A & 0x01))set_zero();
         else unset_zero();
         break;
     case 0x48://Test bit 1 of B
+        set_halfcarry();
+        unset_subtract();
         if(!(B & 0x02))set_zero();
         else unset_zero();
         break;
     case 0x49://Test bit 1 of C
+        set_halfcarry();
+        unset_subtract();
         if(!(C & 0x02))set_zero();
         else unset_zero();
         break;
     case 0x4A://Test bit 1 of D
+        set_halfcarry();
+        unset_subtract();
         if(!(D & 0x02))set_zero();
         else unset_zero();
         break;
     case 0x4B://Test bit 1 of E
+        set_halfcarry();
+        unset_subtract();
         if(!(E & 0x02))set_zero();
         else unset_zero();
         break;
     case 0x4C://Test bit 1 of H
+        set_halfcarry();
+        unset_subtract();
         if(!(H & 0x02))set_zero();
         else unset_zero();
         break;
     case 0x4D://Test bit 1 of L
+        set_halfcarry();
+        unset_subtract();
         if(!(L & 0x02))set_zero();
         else unset_zero();
         break;
     case 0x4E://Test bit 1 of value pointed to by HL
+        set_halfcarry();
+        unset_subtract();
         if(!(get_mem(u8_to_u16(H,L)) & 0x02))set_zero();
         else unset_zero();
         break;
     case 0x4F://Test bit 1 of A
+        set_halfcarry();
+        unset_subtract();
         if(!(A & 0x02))set_zero();
         else unset_zero();
         break;
 
     case 0x50://Test bit 2 of B
+        set_halfcarry();
+        unset_subtract();
         if(!(B & 0x04))set_zero();
         else unset_zero();
         break;
     case 0x51://Test bit 2 of C
+        set_halfcarry();
+        unset_subtract();
         if(!(C & 0x04))set_zero();
         else unset_zero();
         break; 
     case 0x52://Test bit 2 of D
+        set_halfcarry();
+        unset_subtract();
         if(!(D & 0x04))set_zero();
         else unset_zero();
         break;
     case 0x53://Test bit 2 of E
+        set_halfcarry();
+        unset_subtract();
         if(!(E & 0x04))set_zero();
         else unset_zero();
         break;
     case 0x54://Test bit 2 of H
+        set_halfcarry();
+        unset_subtract();
         if(!(H & 0x04))set_zero();
         else unset_zero();
         break;
     case 0x55://Test bit 2 of L
+        set_halfcarry();
+        unset_subtract();
         if(!(L & 0x04))set_zero();
         else unset_zero();
         break;
     case 0x56://Test bit 2 of value pointed to by HL
+        set_halfcarry();
+        unset_subtract();
         if(!(get_mem(u8_to_u16(H,L)) & 0x04))set_zero();
         else unset_zero();
         break;
     case 0x57://Test bit 2 of A
+        set_halfcarry();
+        unset_subtract();
         if(!(A & 0x04))set_zero();
         else unset_zero();
         break;
     case 0x58://Test bit 3 of B
+        set_halfcarry();
+        unset_subtract();
         if(!(B & 0x08))set_zero();
         else unset_zero();
         break;
     case 0x59://Test bit 3 of C
+        set_halfcarry();
+        unset_subtract();
         if(!(C & 0x08))set_zero();
         else unset_zero();
         break; 
     case 0x5A://Test bit 3 of D
+        set_halfcarry();
+        unset_subtract();
         if(!(D & 0x08))set_zero();
         else unset_zero();
         break;
     case 0x5B://Test bit 3 of E
+        set_halfcarry();
+        unset_subtract();
         if(!(E & 0x08))set_zero();
         else unset_zero();
         break;
     case 0x5C://Test bit 3 of H
+        set_halfcarry();
+        unset_subtract();
         if(!(H & 0x08))set_zero();
         else unset_zero();
         break;
     case 0x5D://Test bit 3 of L
+        set_halfcarry();
+        unset_subtract();
         if(!(L & 0x08))set_zero();
         else unset_zero();
         break;
     case 0x5E://Test bit 3 of value pointed to by HL
+        set_halfcarry();
+        unset_subtract();
         if(!(get_mem(u8_to_u16(H,L)) & 0x08))set_zero();
         else unset_zero();
         break;
     case 0x5F://Test bit 3 of A
+        set_halfcarry();
+        unset_subtract();
         if(!(A & 0x08))set_zero();
         else unset_zero();
         break;
 
     case 0x60://Test bit 4 of B
+        set_halfcarry();
+        unset_subtract();
         if(!(B & 0x10))set_zero();
         else unset_zero();
         break;
     case 0x61://Test bit 4 of C
+        set_halfcarry();
+        unset_subtract();
         if(!(C & 0x10))set_zero();
         else unset_zero();
         break; 
     case 0x62://Test bit 4 of D
+        set_halfcarry();
+        unset_subtract();
         if(!(D & 0x10))set_zero();
         else unset_zero();
         break;
     case 0x63://Test bit 4 of E
+        set_halfcarry();
+        unset_subtract();
         if(!(E & 0x10))set_zero();
         else unset_zero();
         break;
     case 0x64://Test bit 4 of H
+        set_halfcarry();
+        unset_subtract();
         if(!(H & 0x10))set_zero();
         else unset_zero();
         break;
     case 0x65://Test bit 4 of L
+        set_halfcarry();
+        unset_subtract();
         if(!(L & 0x10))set_zero();
         else unset_zero();
         break;
     case 0x66://Test bit 4 of value pointed to by HL
+        set_halfcarry();
+        unset_subtract();
         if(!(get_mem(u8_to_u16(H,L)) & 0x10))set_zero();
         else unset_zero();
         break;
     case 0x67://Test bit 4 of A
+        set_halfcarry();
+        unset_subtract();
         if(!(A & 0x10))set_zero();
         else unset_zero();
         break;
     case 0x68://Test bit 5 of B
+        set_halfcarry();
+        unset_subtract();
         if(!(B & 0x20))set_zero();
         else unset_zero();
         break;
     case 0x69://Test bit 5 of C
+        set_halfcarry();
+        unset_subtract();
         if(!(C & 0x20))set_zero();
         else unset_zero();
         break; 
     case 0x6A://Test bit 5 of D
+        set_halfcarry();
+        unset_subtract();
         if(!(D & 0x20))set_zero();
         else unset_zero();
         break;
     case 0x6B://Test bit 5 of E
+        set_halfcarry();
+        unset_subtract();
         if(!(E & 0x20))set_zero();
         else unset_zero();
         break;
     case 0x6C://Test bit 5 of H
+        set_halfcarry();
+        unset_subtract();
         if(!(H & 0x20))set_zero();
         else unset_zero();
         break;
     case 0x6D://Test bit 5 of L
+        set_halfcarry();
+        unset_subtract();
         if(!(L & 0x20))set_zero();
         else unset_zero();
         break;
     case 0x6E://Test bit 5 of value pointed to by HL
+        set_halfcarry();
+        unset_subtract();
         if(!(get_mem(u8_to_u16(H,L)) & 0x20))set_zero();
         else unset_zero();
         break;
     case 0x6F://Test bit 5 of A
+        set_halfcarry();
+        unset_subtract();
         if(!(A & 0x20))set_zero();
         else unset_zero();
         break;
 
     case 0x70://Test bit 6 of B
+        set_halfcarry();
+        unset_subtract();
         if(!(B & 0x40))set_zero();
         else unset_zero();
         break;
     case 0x71://Test bit 6 of C
+        set_halfcarry();
+        unset_subtract();
         if(!(C & 0x40))set_zero();
         else unset_zero();
         break; 
     case 0x72://Test bit 6 of D
+        set_halfcarry();
+        unset_subtract();
         if(!(D & 0x40))set_zero();
         else unset_zero();
         break;
     case 0x73://Test bit 6 of E
+        set_halfcarry();
+        unset_subtract();
         if(!(E & 0x40))set_zero();
         else unset_zero();
         break;
     case 0x74://Test bit 6 of H
+        set_halfcarry();
+        unset_subtract();
         if(!(H & 0x40))set_zero();
         else unset_zero();
         break;
     case 0x75://Test bit 6 of L
+        set_halfcarry();
+        unset_subtract();
         if(!(L & 0x40))set_zero();
         else unset_zero();
         break;
     case 0x76://Test bit 6 of value pointed to by HL
+        set_halfcarry();
+        unset_subtract();
         if(!(get_mem(u8_to_u16(H,L)) & 0x40))set_zero();
         else unset_zero();
         break;
     case 0x77://Test bit 6 of A
+        set_halfcarry();
+        unset_subtract();
         if(!(A & 0x40))set_zero();
         else unset_zero();
         break;
     case 0x78://Test bit 7 of B
+        set_halfcarry();
+        unset_subtract();
         if(!(B & 0x80))set_zero();
         else unset_zero();
         break;
     case 0x79://Test bit 7 of C
+        set_halfcarry();
+        unset_subtract();
         if(!(C & 0x80))set_zero();
         else unset_zero();
         break; 
     case 0x7A://Test bit 7 of D
+        set_halfcarry();
+        unset_subtract();
         if(!(D & 0x80))set_zero();
         else unset_zero();
         break;
     case 0x7B://Test bit 7 of E
+        set_halfcarry();
+        unset_subtract();
         if(!(E & 0x80))set_zero();
         else unset_zero();
         break;
     case 0x7C://Test bit 7 of H
+        set_halfcarry();
+        unset_subtract();
         if(!(H & 0x80))set_zero();
         else unset_zero();
         break;
     case 0x7D://Test bit 7 of L
+        set_halfcarry();
+        unset_subtract();
         if(!(L & 0x80))set_zero();
         else unset_zero();
         break;
     case 0x7E://Test bit 7 of value pointed to by HL
+        set_halfcarry();
+        unset_subtract();
         if(!(get_mem(u8_to_u16(H,L)) & 0x80))set_zero();
         else unset_zero();
         break;
     case 0x7F://Test bit 7 of A
+        set_halfcarry();
+        unset_subtract();
         if(!(A & 0x80))set_zero();
         else unset_zero();
         break;
 
-    case 0x87://Clear bit zero of A
+    case 0x80://Clear bit 0 of B
+        B &= 0xFE;
+        break;
+    case 0x81://Clear bit 0 of C
+        C &= 0xFE;
+        break;
+    case 0x82://Clear bit 0 of D
+        D &= 0xFE;
+        break;
+    case 0x83://Clear bit 0 of E
+        E &= 0xFE;
+        break;
+    case 0x84://Clear bit 0 of H
+        H &= 0xFE;
+        break;
+    case 0x85://Clear bit 0 of L
+        L &= 0xFE;
+        break;
+    case 0x86://Clear bit 0 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) & 0xFE);
+        break;
+    case 0x87://Clear bit 0 of A
         A &= 0xFE;
+        break;
+    case 0x88://Clear bit 1 of B
+        B &= 0xFD;
+        break;
+    case 0x89://Clear bit 1 of C
+        C &= 0xFD;
+        break;
+    case 0x8A://Clear bit 1 of D
+        D &= 0xFD;
+        break;
+    case 0x8B://Clear bit 1 of E
+        E &= 0xFD;
+        break;
+    case 0x8C://Clear bit 1 of H
+        H &= 0xFD;
+        break;
+    case 0x8D://Clear bit 1 of L
+        L &= 0xFD;
+        break;
+    case 0x8E://Clear bit 1 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) & 0xFD);
+        break;
+    case 0x8F://Clear bit 1 of A
+        A &= 0xFD;
+        break;
+
+    case 0x90://Clear bit 2 of B
+        B &= 0xFB;
+        break;
+    case 0x91://Clear bit 2 of C
+        C &= 0xFB;
+        break;
+    case 0x92://Clear bit 2 of D
+        D &= 0xFB;
+        break;
+    case 0x93://Clear bit 2 of E
+        E &= 0xFB;
+        break;
+    case 0x94://Clear bit 2 of H
+        H &= 0xFB;
+        break;
+    case 0x95://Clear bit 2 of L
+        L &= 0xFB;
+        break;
+    case 0x96://Clear bit 2 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) & 0xFB);
+        break;
+    case 0x97://Clear bit 2 of A
+        A &= 0xFB;
+        break;
+    case 0x98://Clear bit 3 of B
+        B &= 0xF7;
+        break;
+    case 0x99://Clear bit 3 of C
+        C &= 0xF7;
+        break;
+    case 0x9A://Clear bit 3 of D
+        D &= 0xF7;
+        break;
+    case 0x9B://Clear bit 3 of E
+        E &= 0xF7;
+        break;
+    case 0x9C://Clear bit 3 of H
+        H &= 0xF7;
+        break;
+    case 0x9D://Clear bit 3 of L
+        L &= 0xF7;
+        break;
+    case 0x9E://Clear bit 3 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) & 0xF7);
+        break;
+    case 0x9F://Clear bit 3 of A
+        A &= 0xF7;
+        break;
+
+    case 0xA0://Clear bit 4 of B
+        B &= 0xEF;
+        break;
+    case 0xA1://Clear bit 4 of C
+        C &= 0xEF;
+        break;
+    case 0xA2://Clear bit 4 of D
+        D &= 0xEF;
+        break;
+    case 0xA3://Clear bit 4 of E
+        E &= 0xEF;
+        break;
+    case 0xA4://Clear bit 4 of H
+        H &= 0xEF;
+        break;
+    case 0xA5://Clear bit 4 of L
+        L &= 0xEF;
+        break;
+    case 0xA6://Clear bit 4 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) & 0xEF);
+        break;
+    case 0xA7://Clear bit 4 of A
+        A &= 0xEF;
+        break;
+    case 0xA8://Clear bit 5 of B
+        B &= 0xDF;
+        break;
+    case 0xA9://Clear bit 5 of C
+        C &= 0xDF;
+        break;
+    case 0xAA://Clear bit 5 of D
+        D &= 0xDF;
+        break;
+    case 0xAB://Clear bit 5 of E
+        E &= 0xDF;
+        break;
+    case 0xAC://Clear bit 5 of H
+        H &= 0xDF;
+        break;
+    case 0xAD://Clear bit 5 of L
+        L &= 0xDF;
+        break;
+    case 0xAE://Clear bit 5 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) & 0xDF);
+        break;
+    case 0xAF://Clear bit 5 of A
+        A &= 0xDF;
+        break;
+
+    case 0xB0://Clear bit 6 of B
+        B &= 0xBF;
+        break;
+    case 0xB1://Clear bit 6 of C
+        C &= 0xBF;
+        break;
+    case 0xB2://Clear bit 6 of D
+        D &= 0xBF;
+        break;
+    case 0xB3://Clear bit 6 of E
+        E &= 0xBF;
+        break;
+    case 0xB4://Clear bit 6 of H
+        H &= 0xBF;
+        break;
+    case 0xB5://Clear bit 6 of L
+        L &= 0xBF;
+        break;
+    case 0xB6://Clear bit 6 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) & 0xBF);
+        break;
+    case 0xB7://Clear bit 6 of A
+        A &= 0xBF;
+        break;
+    case 0xB8://Clear bit 7 of B
+        B &= 0x7F;
+        break;
+    case 0xB9://Clear bit 7 of C
+        C &= 0x7F;
+        break;
+    case 0xBA://Clear bit 7 of D
+        D &= 0x7F;
+        break;
+    case 0xBB://Clear bit 7 of E
+        E &= 0x7F;
+        break;
+    case 0xBC://Clear bit 7 of H
+        H &= 0x7F;
+        break;
+    case 0xBD://Clear bit 7 of L
+        L &= 0x7F;
+        break;
+    case 0xBE://Clear bit 7 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) & 0x7F);
+        break;
+    case 0xBF://Clear bit 7 of A
+        A &= 0x7F;
         break;
 
     case 0xC0://Set bit 0 of B
@@ -868,8 +1181,8 @@ void cb_opcodes(const u8 opcode){
     case 0xC5://Set bit 0 of L
       L |= 0x01;
       break;
-    case 0xC6://Set bit 0 of address at HF
-      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x01));
+    case 0xC6://Set bit 0 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x01);
       break;
     case 0xC7://Set bit 0 of A
       A |= 0x01;
@@ -892,8 +1205,8 @@ void cb_opcodes(const u8 opcode){
     case 0xCD://Set bit 1 of L
       L |= 0x02;
       break;
-    case 0xCE://Set bit 1 of address at HF
-      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x02));
+    case 0xCE://Set bit 1 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x02);
       break;
     case 0xCF://Set bit 1 of A
       A |= 0x02;
@@ -917,8 +1230,8 @@ void cb_opcodes(const u8 opcode){
     case 0xD5://Set bit 2 of L
       L |= 0x04;
       break;
-    case 0xD6://Set bit 2 of address at HF
-      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x04));
+    case 0xD6://Set bit 2 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x04);
       break;
     case 0xD7://Set bit 2 of A
       A |= 0x04;
@@ -941,8 +1254,8 @@ void cb_opcodes(const u8 opcode){
     case 0xDD://Set bit 3 of L
       L |= 0x08;
       break;
-    case 0xDE://Set bit 3 of address at HF
-      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x08));
+    case 0xDE://Set bit 3 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x08);
       break;
     case 0xDF://Set bit 3 of A
       A |= 0x08;
@@ -966,8 +1279,8 @@ void cb_opcodes(const u8 opcode){
     case 0xE5://Set bit 4 of L
       L |= 0x10;
       break;
-    case 0xE6://Set bit 4 of address at HF
-      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x10));
+    case 0xE6://Set bit 4 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x10);
       break;
     case 0xE7://Set bit 4 of A
       A |= 0x10;
@@ -990,8 +1303,8 @@ void cb_opcodes(const u8 opcode){
     case 0xED://Set bit 5 of L
       L |= 0x20;
       break;
-    case 0xEE://Set bit 5 of address at HF
-      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x20));
+    case 0xEE://Set bit 5 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x20);
       break;
     case 0xEF://Set bit 5 of A
       A |= 0x20;
@@ -1015,8 +1328,8 @@ void cb_opcodes(const u8 opcode){
     case 0xF5://Set bit 6 of L
       L |= 0x40;
       break;
-    case 0xF6://Set bit 6 of address at HF
-      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x40));
+    case 0xF6://Set bit 6 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x40);
       break;
     case 0xF7://Set bit 6 of A
       A |= 0x40;
@@ -1039,9 +1352,9 @@ void cb_opcodes(const u8 opcode){
     case 0xFD://Set bit 7 of L
       L |= 0x80;
       break;
-    case 0xFE://Set bit 7 of address at HF
-      set_mem(u8_to_u16(H,F),get_mem(u8_to_u16(H,F) | 0x80));
-      break;
+    case 0xFE://Set bit 7 of address at HL
+        set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x80);
+    break;
     case 0xFF://Set bit 7 of A
       A |= 0x80;
       break;
@@ -1209,7 +1522,7 @@ void cpu_step(u8 opcode){
         H = get_mem(PC++);
         break;
     case 0x27://DAA not  implemented
-        printf("DAA Used\n");
+        //printf("DAA Used\n");
         break;
     case 0x28://Relative jump by signed immediate if last result caused a zero
         signed_tmp = (signed char)get_mem(PC);
@@ -1274,10 +1587,10 @@ void cpu_step(u8 opcode){
         SP = inc_16(SP);
         break;
     case 0x34://INC (HL)
-        inc_mem(u8_to_u16(H,L));
+        set_mem(u8_to_u16(H,L), inc_8(get_mem(u8_to_u16(H,L))));
         break;
     case 0x35://DEC (HL)
-        dec_mem(u8_to_u16(H,L));
+        set_mem(u8_to_u16(H,L), dec_8(get_mem(u8_to_u16(H,L))));
         break;
     case 0x36://Load immediate into address pointed by HL
         set_mem(u8_to_u16(H,L),get_mem(PC++));
@@ -1936,10 +2249,17 @@ void cpu_step(u8 opcode){
         PC = 0x20;
         break;
     case 0xE8://add signed 8bit immediate to SP
-        unset_zero();
-        unset_subtract();
-        SP = (SP + (signed char)get_mem(PC++)) & 0xFF;
-        break;
+    {
+        signed char val;
+        reset_flags();
+        val = (signed char)(get_mem(PC++) & 0xFF);
+        if((SP + val > 0xFFFF) || (SP + val < 0x00))
+            set_carry();
+        if((SP & 0xFF) + val > 0xFF || (SP & 0xFF) + val < 0x00)
+            set_halfcarry();
+        SP = (SP + val) & 0xFFFF;
+    }
+    break;
     case 0xE9://PC equals HL
         PC = u8_to_u16(H,L);
         break;
@@ -1989,10 +2309,18 @@ void cpu_step(u8 opcode){
         PC = 0x30;
         break;
     case 0xF8://Add signed immediate to SP and save result in HL
-        tmp = SP + (signed char)get_mem(PC++);
-        H = (tmp >> 8) & 0xFF;
-        L = tmp & 0xFF;
-        break;
+    {
+        signed char val;
+        reset_flags();
+        val = (signed char)(get_mem(PC++) & 0xFF);
+        if((SP + val > 0xFFFF) || (SP + val < 0x00))
+            set_carry();
+        if((SP & 0xFF) + val > 0xFF || (SP & 0xFF) + val < 0x00)
+            set_halfcarry();
+        H = ((SP + val) >> 8) & 0xFF;
+        L = (SP + val) & 0xFF;
+    }    
+    break;
     case 0xF9://copy HL to SP
         SP = u8_to_u16(H,L);
         break;
