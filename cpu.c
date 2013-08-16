@@ -92,11 +92,12 @@ static inline u8 add_8(const u8 a,const u8 b){
     return ret & 0xFF;
 }
 static inline u8 add_8c(const u8 a,const u8 b){//also add carry flag
-    unsigned int ret = ((F >> 4) & 1) + b + a;
+    unsigned int carry = (F >> 4) & 1;
+    unsigned int ret = a + b + carry;
     reset_flags();
     if(!(ret & 0xFF)) set_zero();
     if(ret > 0xFF) set_carry();
-    if((a & 0xF) + ((F >> 4) & 1) + (b & 0xF) > 0xF) set_halfcarry();
+    if((a & 0xF) + (b & 0xF) + carry > 0xF) set_halfcarry();
     return ret & 0xFF;
 }
 static inline u8 sub_8(const u8 a,const u8 b){
@@ -110,13 +111,17 @@ static inline u8 sub_8(const u8 a,const u8 b){
 }
 
 static inline u8 sub_8c(const u8 a,const u8 b){
-  u8 ret = (a - ((F >> 4) & 1) - b) & 0xFF;
+    int carry = (F >> 4) & 1;
+    int result = a - b - carry;
     reset_flags();
     set_subtract();
-    if(!ret) set_zero();
-    if(a - ((F >> 4) & 1) - b < 0) set_carry();
-    if((a & 0xF) - ((F >> 4) & 1) - (b & 0xF) < 0) set_halfcarry();
-    return ret;
+    if(!(result & 0xFF))
+        set_zero();
+    if(result < 0)
+        set_carry();
+    if((a & 0xF) - (b & 0xF) - carry < 0)
+        set_halfcarry();
+    return (result & 0xFF);
 }
 static inline u16 inc_16(const u16 to_inc){  //sets no flags
     return (to_inc + 1) & 0xFFFF;
@@ -1432,7 +1437,7 @@ void cpu_step(u8 opcode){
 
     case 0x10://Stop cpu and lcd until a button is pressed
         printf("Processor stopping\n");
-        cpu_stop =1;
+        cpu_stop = 1;
         break;
     case 0x11://load 16bit immediate into DE
         E = get_mem(PC++);
@@ -2250,14 +2255,14 @@ void cpu_step(u8 opcode){
         break;
     case 0xE8://add signed 8bit immediate to SP
     {
-        signed char val;
+        int number = get_mem(PC++);
+        int result = SP + number;
         reset_flags();
-        val = (signed char)(get_mem(PC++) & 0xFF);
-        if((SP + val > 0xFFFF) || (SP + val < 0x00))
-            set_carry();
-        if((SP & 0xFF) + val > 0xFF || (SP & 0xFF) + val < 0x00)
+        if((SP ^ number ^ (result & 0xFFFF)) & 0x100)
+           set_carry();
+        if((SP ^ number ^ (result & 0xFFFF)) & 0x10)
             set_halfcarry();
-        SP = (SP + val) & 0xFFFF;
+        SP = (u16)(result);
     }
     break;
     case 0xE9://PC equals HL
@@ -2310,15 +2315,15 @@ void cpu_step(u8 opcode){
         break;
     case 0xF8://Add signed immediate to SP and save result in HL
     {
-        signed char val;
+        int number = get_mem(PC++) & 0xFF;
+        int result = SP + number;
         reset_flags();
-        val = (signed char)(get_mem(PC++) & 0xFF);
-        if((SP + val > 0xFFFF) || (SP + val < 0x00))
-            set_carry();
-        if((SP & 0xFF) + val > 0xFF || (SP & 0xFF) + val < 0x00)
+        if((SP ^ number ^ (result & 0xFFFF)) & 0x100)
+           set_carry();
+        if((SP ^ number ^ (result & 0xFFFF)) & 0x10)
             set_halfcarry();
-        H = ((SP + val) >> 8) & 0xFF;
-        L = (SP + val) & 0xFF;
+        H = (result >> 8) & 0xFF;
+        L = result & 0xFF;
     }    
     break;
     case 0xF9://copy HL to SP
