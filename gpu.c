@@ -213,6 +213,7 @@ void gpu_step(int op_time){
             gpu->line++;
             if(gpu->line == (HEIGHT-1)){//vblank
                 gpu->mode = 1;
+		memory->interrupt_flags |= 1;
                 //push the stored image onto the screen
             }else{//Scanline start
                 gpu->mode=2;

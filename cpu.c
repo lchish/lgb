@@ -2189,7 +2189,7 @@ void cpu_step(u8 opcode){
         }
         break;
     case 0xD9://enable interrupts and return
-        printf("enabling cpu interrupts\n");
+        printf("enable cpu interrupts and return\n");
         interrupts = 1;
         PC = u8_to_u16(get_mem(SP+1),(get_mem(SP)));
         SP += 2;
@@ -2290,8 +2290,8 @@ void cpu_step(u8 opcode){
     case 0xF0://load A from address pointed to by 0xFF00 + immediate 8bit
         A = get_mem(0xFF00 + get_mem(PC++));
         break;
-    case 0xF1://POP stack into AF
-        F = get_mem(SP++);
+    case 0xF1://POP stack into AF low nibbles of flag register should be zeroed
+        F = get_mem(SP++) & 0xF0;
         A = get_mem(SP++);
         break;
     case 0xF2://Put value at address $FF00 + register C into A
@@ -2368,14 +2368,6 @@ void vblank_interrupt(){
     cpu_time += 12;
 }
 
-void interrupt_return(){
-    printf("exiting interrupt\n");
-    interrupts = 1;
-    PC = u8_to_u16(get_mem(SP + 1),get_mem(SP));
-    SP += 2;
-    op_time += 3;
-    cpu_time += 12;
-}
 void print_cpu(){
     printf("A: %X F: %X B: %X C: %X D: %X E: %X H: %X L: %X\n",A,F,B,C,D,E,H,L);
     printf("SP: %X\n",SP);
@@ -2410,7 +2402,6 @@ void cpu_run(){
     while(!cpu_exit_loop){
         cpu_step(get_mem(PC++));
         gpu_step(op_time);
-        PC &= 0xFFFF;
 
         if(interrupts && memory->interrupt_enable && memory->interrupt_flags){
             int fired = memory->interrupt_enable & memory->interrupt_flags;
@@ -2419,5 +2410,6 @@ void cpu_run(){
                 vblank_interrupt();
             }
         }
+        PC &= 0xFFFF;
     }
 }
