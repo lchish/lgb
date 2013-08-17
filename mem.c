@@ -160,13 +160,13 @@ void set_mem(u16 address,u8 value){
         break;
         //VRAM 2KB
     case 0x8000: case 0x9000:
-        memory->vram[address-0x8000] = value;
+        memory->vram[address - 0x8000] = value;
         if(address <= TILE_DATA_END)
             update_tile(address);
         return;
         //Swtichable RAM 2KB
     case 0xA000: case 0xB000:
-        memory->eram[address-0xA000] = value;
+        memory->eram[address - 0xA000] = value;
         return;
         //Internal RAM 2KB
     case 0xC000: case 0xD000:
@@ -189,11 +189,11 @@ void set_mem(u16 address,u8 value){
                 update_sprite(address);
                 return;
             }else{
-                printf("writing to empty ram address %X\n", address);
+                printf("writing to empty ram address 0x%X\n", address);
             }
         case 0xF00:
             if(address == INTERRUPT_ENABLE){
-                printf("setting memory interrupts to %X\n",value);
+                printf("setting memory interrupts to 0x%X\n",value);
                 memory->interrupt_enable = value;
                 return;
             }

@@ -8,10 +8,10 @@
 #define HEIGHT 144
 #define FULL_FRAME 70224//number of clock cycles a frame, approx 60 fps
 
-#define HORIZONTAL_BLANK1_TIME 204
-#define HORIZONTAL_BLANK2_TIME 456
-#define SCAN_VRAM_TIME 172
-#define SCAN_OAM_TIME 80
+#define HORIZONTAL_BLANK1_TIME 51
+#define HORIZONTAL_BLANK2_TIME 114
+#define SCAN_VRAM_TIME 43
+#define SCAN_OAM_TIME 20
 
 #define NUM_TILES 384
 #define NUM_SPRITES 40

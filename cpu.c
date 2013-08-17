@@ -21,12 +21,13 @@ u16 SP;
 
 //cpu information
 int interrupts;
-int cpu_time;
+unsigned long cpu_time;
 int cpu_halt;
 int cpu_stop;
 int op_time;
 int cpu_exit_loop;
 
+FILE *files;
 //convert two u8s to a single u16
 static inline u16 u8_to_u16(const u8 high,const u8 low){
     return (u16) (((high << 8) & 0xFF00) + low);
@@ -159,22 +160,6 @@ static inline u8 xor_8(const u8 a,const u8 b){
     return ret;
 }
 
-/**
- * These rotate functions should compile into actual rotate instructions on 
- * the cpu with an appropriate compiler.
- */
-static unsigned int _rotl(const unsigned int value, int shift) {
-    if ((shift &= sizeof(value)*8 - 1) == 0)
-        return value;
-    return (value << shift) | (value >> (sizeof(value)*8 - shift));
-}
-
-static unsigned int _rotr(const unsigned int value, int shift) {
-    if ((shift &= sizeof(value)*8 - 1) == 0)
-        return value;
-    return (value >> shift) | (value << (sizeof(value)*8 - shift));
-}
-
 static inline u8 rot_left_carry_8(const u8 a){
   reset_flags();
   if(a & 0x80) set_carry();
@@ -182,7 +167,7 @@ static inline u8 rot_left_carry_8(const u8 a){
 }
 static inline u8 rot_left_8(const u8 a){
     u8 ret;
-    ret = (_rotl(a,1) + (F & 0x10 ? 0x01 : 0)) & 0xFF;
+    ret = ((a << 1) | ((F >> 4) & 0x01)) & 0xFF;
     reset_flags();
     if (a & 0x80) set_carry();
     return ret;
@@ -194,7 +179,7 @@ static inline u8 rot_right_carry_8(const u8 a){
 }
 static inline u8 rot_right_8(const u8 a){
     u8 ret;
-    ret = (_rotr(a,1) + (F & 0x10 ? 0x80 : 0)) & 0xFF;
+    ret = ((a >> 1) | (F & 0x10 ? 0x80 : 0x00)) & 0xFF;
     reset_flags();
     if (a & 0x01) set_carry();
     return ret ;
@@ -1372,10 +1357,16 @@ void cb_opcodes(const u8 opcode){
     op_time  += cb_table[opcode];
 }
 
+void cpu_writeout_state(u8 opcode){
+  if(!memory->in_bios)
+    fprintf(files, "opcode %X PC %X SP %X a %X b %X c %X d %X  e %X f %X h %X l %X cycleCounter %lu\n",opcode, PC, SP, A, B, C,D,E,F,H,L, (cpu_time * 4) - 23676308);
+}
+
 void cpu_step(u8 opcode){
     u16 tmp;
     int signed_tmp;
     op_time = 0;
+    cpu_writeout_state(opcode);
     switch(opcode){
     case 0x00://no-op
         break;
@@ -1497,8 +1488,8 @@ void cpu_step(u8 opcode){
         signed_tmp = (signed char)get_mem(PC);
         if(!(F & 0x80)){
             PC += signed_tmp;
-            cpu_time += 4;
-            op_time += 4;
+            cpu_time += 1;
+            op_time += 1;
         }
         PC++;
         break;
@@ -1527,14 +1518,14 @@ void cpu_step(u8 opcode){
         H = get_mem(PC++);
         break;
     case 0x27://DAA not  implemented
-        //printf("DAA Used\n");
+        printf("DAA Used\n");
         break;
     case 0x28://Relative jump by signed immediate if last result caused a zero
         signed_tmp = (signed char)get_mem(PC);
         if(F & 0x80){
             PC+=signed_tmp;
-            cpu_time +=4;
-            op_time+=4;
+            cpu_time += 1;
+            op_time += 1;
         }
         PC++;
         break;
@@ -1571,10 +1562,10 @@ void cpu_step(u8 opcode){
     
     case 0x30://Relative jump by signed immediate if last result was not carry
         signed_tmp = (signed char)get_mem(PC);
-        if(!(F&0x10)){
+        if(!(F & 0x10)){
             PC+=signed_tmp;
-            cpu_time +=4;
-            op_time+=4;
+            cpu_time += 1;
+            op_time += 1;
         }
         PC++;
         break;
@@ -1607,10 +1598,10 @@ void cpu_step(u8 opcode){
         break;
     case 0x38://Relative jump by signed immediate if last result caused a carry
         signed_tmp = (signed char)get_mem(PC);
-        if(F&0x10){
-            PC+=signed_tmp;
-            cpu_time +=4;
-            op_time+=4;
+        if(F & 0x10){
+            PC += signed_tmp;
+            cpu_time += 1;
+            op_time += 1;
         }
         PC++;
         break;
@@ -1812,7 +1803,7 @@ void cpu_step(u8 opcode){
         set_mem(u8_to_u16(H,L),L);
         break;
     case 0x76://HALT
-        printf("halting cpu");
+        printf("halting cpu\n");
         cpu_halt = 1;
         break;
     case 0x77://copy A to Address pointed to by HL
@@ -2039,11 +2030,11 @@ void cpu_step(u8 opcode){
         break;
 
     case 0xC0://Return if last result was not zero
-        if(!(F&0x80)){
+        if(!(F & 0x80)){
             PC = u8_to_u16(get_mem(SP+1),(get_mem(SP)));
             SP +=2;
-            cpu_time +=12;
-            op_time+=12;
+            cpu_time += 3;
+            op_time += 3;
         }
         break;
     case 0xC1://POP stack into BC
@@ -2053,8 +2044,8 @@ void cpu_step(u8 opcode){
     case 0xC2://Absolute jump to 16 bit location if last result not zero
         if(!(F & 0x80)){
             PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
-            cpu_time += 4;
-            op_time+=4;
+            cpu_time += 1;
+            op_time += 1;
         }else{
             PC+=2;
         }
@@ -2067,8 +2058,8 @@ void cpu_step(u8 opcode){
             set_mem(--SP,((PC+2) >> 8) & 0xFF);
             set_mem(--SP,(PC+2) & 0xFF);
             PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
-            cpu_time +=12;
-            op_time+=12;
+            cpu_time += 3;
+            op_time += 3;
         }else{
             PC+=2;
         }
@@ -2089,19 +2080,19 @@ void cpu_step(u8 opcode){
         if(F&0x80){
             PC = u8_to_u16(get_mem(SP+1),(get_mem(SP)));
             SP +=2;
-            cpu_time +=12;
-            op_time+=12;
+            cpu_time += 3;
+            op_time += 3;
         }
         break;
     case 0xC9://Return
         PC = u8_to_u16(get_mem(SP+1),(get_mem(SP)));
-        SP +=2;
+        SP += 2;
         break;
     case 0xCA://Absolute jump to 16 bit location if last result zero
         if(F & 0x80){
             PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
-            cpu_time+=4;
-            op_time+=4;
+            cpu_time += 1;
+            op_time += 1;
         }else{
             PC+=2;
         }
@@ -2114,8 +2105,8 @@ void cpu_step(u8 opcode){
             set_mem(--SP,((PC+2) >> 8) & 0xFF);
             set_mem(--SP,(PC+2) & 0xFF);
             PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
-            cpu_time+=12;
-            op_time+=12;
+            cpu_time += 3;
+            op_time += 3;
         }else{
             PC+=2;
         }
@@ -2137,8 +2128,8 @@ void cpu_step(u8 opcode){
         if(!(F&0x10)){
             PC = u8_to_u16(get_mem(SP+1),(get_mem(SP)));
             SP +=2;
-            cpu_time +=12;
-            op_time+=12;
+            cpu_time += 3;
+            op_time += 3;
         }
         break;
     case 0xD1://POP stack into DE
@@ -2148,8 +2139,8 @@ void cpu_step(u8 opcode){
     case 0xD2://Absolute jump to 16 bit location if last result not carry
         if(!(F & 0x10)){
             PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
-            cpu_time +=4;
-            op_time+=4;
+            cpu_time += 1;
+            op_time += 1;
         }else{
             PC+=2;
         }
@@ -2162,8 +2153,8 @@ void cpu_step(u8 opcode){
 
             //set_mem_16(SP,PC+2);//save program counter to stack
             PC = u8_to_u16(get_mem(PC + 1), get_mem(PC));
-            cpu_time += 12;
-            op_time += 12;
+            cpu_time += 3;
+            op_time += 3;
         }else{
             PC+=2;
         }
@@ -2184,12 +2175,11 @@ void cpu_step(u8 opcode){
         if(F&0x10){
             PC = u8_to_u16(get_mem(SP+1),(get_mem(SP)));
             SP +=2;
-            cpu_time +=12;
-            op_time+=12;
+            cpu_time += 3;
+            op_time += 3;
         }
         break;
     case 0xD9://enable interrupts and return
-        printf("enable cpu interrupts and return\n");
         interrupts = 1;
         PC = u8_to_u16(get_mem(SP+1),(get_mem(SP)));
         SP += 2;
@@ -2197,8 +2187,8 @@ void cpu_step(u8 opcode){
     case 0xDA://Absolute jump to 16 bit immediate if last result carry
         if(F & 0x10){
             PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
-            cpu_time += 4;
-            op_time+=4;
+            cpu_time += 1;
+            op_time += 1;
         }else{
             PC+=2;
         }
@@ -2207,11 +2197,11 @@ void cpu_step(u8 opcode){
         break;
     case 0xDC://call routine at 16 bit immediate if last result carry
         if(F & 0x10){
-            set_mem(--SP,((PC+2) >> 8) & 0xFF);
-            set_mem(--SP,((PC+2) & 0xFF) );
-            PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
-            cpu_time+=12;
-            op_time+=12;
+            set_mem(--SP,((PC + 2) >> 8) & 0xFF);
+            set_mem(--SP,((PC + 2) & 0xFF) );
+            PC = u8_to_u16(get_mem(PC + 1),get_mem(PC));
+            cpu_time += 3;
+            op_time += 3;
         }else{
             PC+=2;
         }
@@ -2255,7 +2245,7 @@ void cpu_step(u8 opcode){
         break;
     case 0xE8://add signed 8bit immediate to SP
     {
-        int number = get_mem(PC++);
+      int number = (signed char)get_mem(PC++);
         int result = SP + number;
         reset_flags();
         if((SP ^ number ^ (result & 0xFFFF)) & 0x100)
@@ -2298,7 +2288,6 @@ void cpu_step(u8 opcode){
         A = get_mem(0xFF00 + C);
         break;
     case 0xF3://Disable interrupts. Interrupts are disabled after instruction after this one is executed
-        printf("Disabling cpu interrupts\n");
         interrupts = 0;
         break;
     case 0xF5://PUSH AF onto stack
@@ -2315,7 +2304,7 @@ void cpu_step(u8 opcode){
         break;
     case 0xF8://Add signed immediate to SP and save result in HL
     {
-        int number = get_mem(PC++) & 0xFF;
+      int number = (signed char)get_mem(PC++);
         int result = SP + number;
         reset_flags();
         if((SP ^ number ^ (result & 0xFFFF)) & 0x100)
@@ -2334,7 +2323,6 @@ void cpu_step(u8 opcode){
         PC += 2;
         break;
     case 0xFB://Enable interrupts. Interrupts are enabled after instruction after this one is executed
-        printf("enable cpu interrupts\n");
         interrupts = 1;
         break;
     case 0xFC://not used
@@ -2359,23 +2347,27 @@ void cpu_step(u8 opcode){
 }
 
 void vblank_interrupt(){
-    printf("entering vblank interrupt\n");
     interrupts = 0;
     set_mem(--SP,(PC >> 8) & 0xFF);
     set_mem(--SP,(PC & 0xFF) );
     PC = 0x0040;
     op_time += 3;
-    cpu_time += 12;
+    cpu_time += 3;
 }
 
 void print_cpu(){
     printf("A: %X F: %X B: %X C: %X D: %X E: %X H: %X L: %X\n",A,F,B,C,D,E,H,L);
     printf("SP: %X\n",SP);
     printf("PC:%X\n",PC);
-    printf("Time %d cycles\n",cpu_time);
+    printf("Time %lu cycles\n",cpu_time);
 }
 
 void cpu_init(){
+  files = fopen("out","w");
+  if(!files){
+    printf("couldn't open out");
+    exit(1);
+  }
     A = B = C = D = E = H = L = F = 0;
     PC = 0;
     SP = 0;
@@ -2398,11 +2390,10 @@ void cpu_run_once(){
     PC &= 0xFFFF;
     print_cpu();
 }
+
 void cpu_run(){
     while(!cpu_exit_loop){
         cpu_step(get_mem(PC++));
-        gpu_step(op_time);
-
         if(interrupts && memory->interrupt_enable && memory->interrupt_flags){
             int fired = memory->interrupt_enable & memory->interrupt_flags;
             if(fired & 1){
@@ -2410,6 +2401,7 @@ void cpu_run(){
                 vblank_interrupt();
             }
         }
+        gpu_step(op_time);
         PC &= 0xFFFF;
     }
 }
