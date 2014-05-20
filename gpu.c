@@ -19,8 +19,9 @@ void gpu_init(){
     gpu->window_display_enable = 0;
     gpu->tile_data_select = 0x8800;
     gpu->background_tile_map_display = 0x9800;
-
+    gpu->background_display = 0;
     gpu->window_display_enable = 0;
+    gpu->sprite_display_enable = 0;
 
     for(y=0;y<HEIGHT;y++){
         for(x=0;x<WIDTH;x++){
@@ -118,11 +119,12 @@ u8 get_lcd_control_register(){
 
 void update_tile(const u16 address){
     unsigned int addy = address,tile_num,y,sx,x;
-    if(address & 1)addy--;
+    if(address & 1)
+        addy--;
     tile_num = ((addy - 0x8000) >> 4);
     y = (addy >> 1) & 7;
     for(x = 0;x < 8;x++){
-        sx=(1 << (7 - x));
+        sx = (1 << (7 - x));
         gpu->tiles[tile_num][y][x] = (get_mem(addy) & sx) ? 1 : 0 | 
             (get_mem(addy + 1) & sx) ? 2 : 0;
     }
@@ -183,7 +185,7 @@ static void render_scan(){
             sprite = gpu->sprites[i];
             if( sprite->y <= gpu->line && (sprite->y + 8) > gpu->line){
                 for( x = 0; x < 8; x++){
-                    if ((sprite->x + x) >= 0 && (sprite->x + x ) < WIDTH &&
+                    if ((sprite->x + x ) < WIDTH &&
                         gpu->tiles[sprite->tile][gpu->line - sprite->y][x]){
                         gpu->frame_buffer[gpu->line][sprite->x+x] = gpu->object_palette0_colours[2];
                     }

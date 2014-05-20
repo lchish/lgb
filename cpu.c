@@ -19,6 +19,16 @@ u8 F;//flags
 u16 PC;
 u16 SP;
 
+//stored registers
+u8 sv_A;
+u8 sv_B;
+u8 sv_C;
+u8 sv_D;
+u8 sv_E;
+u8 sv_H;
+u8 sv_L;
+u8 sv_F;
+
 //cpu information
 int interrupts;
 unsigned long cpu_time;
@@ -134,7 +144,7 @@ static inline u16 add_16(const u16 a,const u16 b){
     unset_subtract();
     unset_halfcarry();
     unset_carry();
-    unsigned int ret = (a + b);
+    unsigned int ret = a + b;
     if(ret > 0xFFFF) set_carry();
     if((a & 0x07FF) + (b & 0x07FF) > 0x07FF) set_halfcarry();
     return ret & 0xFFFF;
@@ -161,9 +171,9 @@ static inline u8 xor_8(const u8 a,const u8 b){
 }
 
 static inline u8 rot_left_carry_8(const u8 a){
-  reset_flags();
-  if(a & 0x80) set_carry();
-  return ((a << 1) | (a >> 7)) & 0xFF;
+    reset_flags();
+    if(a & 0x80) set_carry();
+    return ((a << 1) | (a >> 7)) & 0xFF;
 }
 static inline u8 rot_left_8(const u8 a){
     u8 ret;
@@ -192,6 +202,28 @@ static inline void comp_8(const u8 a,const u8 b){
     if(!ret) set_zero();
     if(ret < 0) set_carry();
     if((a & 0xF) - (b & 0xF ) < 0) set_halfcarry();
+}
+
+static inline void store_regs(){
+    sv_A = A;
+    sv_B = B;
+    sv_C = C;
+    sv_D = D;
+    sv_E = E;
+    sv_F = F;
+    sv_H = H;
+    sv_L = L;
+}
+
+static inline void load_regs(){
+    A = sv_A;
+    B = sv_B;
+    C = sv_C;
+    D = sv_D;
+    E = sv_E;
+    F = sv_F;
+    H = sv_H;
+    L = sv_L;
 }
 
 void cb_opcodes(const u8 opcode){
@@ -1517,13 +1549,39 @@ void cpu_step(u8 opcode){
     case 0x26://Load immediate into H
         H = get_mem(PC++);
         break;
-    case 0x27://DAA not  implemented
-        printf("DAA Used\n");
+    case 0x27:// DAA
+    {
+        int a = A;
+        if(!(F & 0x40)){
+            if((F & 0x20) || (a & 0x0F) > 9)
+                a += 0x06;
+            if((F & 0x10) || (a > 0x9F))
+                a += 0x60;
+        }
+        else{
+            if(F & 0x20)
+                a = (a - 6) & 0xFF;
+            if(F & 0x10)
+                a -= 0x60;
+        }
+        unset_halfcarry();
+
+        if((a & 0x100))
+            set_carry();
+
+        a &= 0xFF;
+
+        if(a == 0)
+            set_zero();
+        else
+            unset_zero();
+        A = (u8)a;
+    }
         break;
     case 0x28://Relative jump by signed immediate if last result caused a zero
         signed_tmp = (signed char)get_mem(PC);
         if(F & 0x80){
-            PC+=signed_tmp;
+            PC += signed_tmp;
             cpu_time += 1;
             op_time += 1;
         }
@@ -1638,7 +1696,6 @@ void cpu_step(u8 opcode){
         break;
 
     case 0x40://Copy B to B
-        B = B;
         break;
     case 0x41://Copy C to B
         B = C;
@@ -1665,7 +1722,6 @@ void cpu_step(u8 opcode){
         C = B;
         break;
     case 0x49://Copy C to C
-        C = C;
         break;
     case 0x4A://Copy D to C
         C = D;
@@ -1693,7 +1749,6 @@ void cpu_step(u8 opcode){
         D = C;
         break;
     case 0x52://Copy D to D
-        D = D;
         break;
     case 0x53://Copy E to D
         D = E;
@@ -1720,7 +1775,6 @@ void cpu_step(u8 opcode){
         E = D;
         break;
     case 0x5B://Copy E to E
-        E = E;
         break;
     case 0x5C://Copy H to E
         E = H;
@@ -1748,7 +1802,6 @@ void cpu_step(u8 opcode){
         H = E;
         break;
     case 0x64://Copy H to H
-        H = H;
         break;
     case 0x65://Copy L to H
         H = L;
@@ -1775,7 +1828,6 @@ void cpu_step(u8 opcode){
         L = H;
         break;
     case 0x6D://Copy L to L
-        L = L;
         break;
     case 0x6E://Copy value pointed by HL to L
         L = get_mem(u8_to_u16(H,L));
@@ -1831,7 +1883,6 @@ void cpu_step(u8 opcode){
         A = get_mem(u8_to_u16(H,L));
         break;
     case 0x7F:// copy A to A
-        A=A;
         break;
 
     case 0x80://ADD B to A
@@ -2174,13 +2225,14 @@ void cpu_step(u8 opcode){
     case 0xD8://Return if last result was carry
         if(F&0x10){
             PC = u8_to_u16(get_mem(SP+1),(get_mem(SP)));
-            SP +=2;
+            SP += 2;
             cpu_time += 3;
             op_time += 3;
         }
         break;
     case 0xD9://enable interrupts and return
         interrupts = 1;
+        load_regs();
         PC = u8_to_u16(get_mem(SP+1),(get_mem(SP)));
         SP += 2;
         break;
@@ -2346,14 +2398,17 @@ void cpu_step(u8 opcode){
     op_time += t[opcode];
 }
 
-void vblank_interrupt(){
+
+
+static void vblank_interrupt(){//RST-40
+    store_regs();
     interrupts = 0;
     set_mem(--SP,(PC >> 8) & 0xFF);
     set_mem(--SP,(PC & 0xFF) );
     PC = 0x0040;
     op_time += 3;
     cpu_time += 3;
-}
+}      
 
 void print_cpu(){
     printf("A: %X F: %X B: %X C: %X D: %X E: %X H: %X L: %X\n",A,F,B,C,D,E,H,L);
@@ -2363,11 +2418,11 @@ void print_cpu(){
 }
 
 void cpu_init(){
-  files = fopen("out","w");
-  if(!files){
-    printf("couldn't open out");
-    exit(1);
-  }
+    files = fopen("out","w");
+    if(!files){
+        printf("couldn't open out");
+        exit(1);
+    }
     A = B = C = D = E = H = L = F = 0;
     PC = 0;
     SP = 0;
@@ -2381,6 +2436,7 @@ void cpu_init(){
 void cpu_exit(){
     cpu_exit_loop = 1;
 }
+
 void cpu_run_once(){
     print_cpu();
     cpu_step(get_mem(PC++));
@@ -2394,6 +2450,7 @@ void cpu_run_once(){
 void cpu_run(){
     while(!cpu_exit_loop){
         cpu_step(get_mem(PC++));
+        // should check that the last instruction wasn't halt
         if(interrupts && memory->interrupt_enable && memory->interrupt_flags){
             int fired = memory->interrupt_enable & memory->interrupt_flags;
             if(fired & 1){

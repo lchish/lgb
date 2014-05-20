@@ -1,12 +1,15 @@
-CFLAGS = -Wall -g -lSDL2
-CFILES = cpu.c mem.c gpu.c main.c display.c cpu_timings.c
+CFLAGS := -Wall -g
+LFLAGS := -lSDL2
+SOURCES = cpu.c mem.c gpu.c main.c display.c cpu_timings.c
 HFILES=$(CFILES:.c=.h)
-OBJECTS=$(CFILES:.c=.o)
+OBJECTS=$(SOURCES:.c=.o)
 EXECUTABLE=lgb
-COMPILER=gcc 
+CC=gcc
 
-all: $(CFILES) $(EXECUTABLE)
+all: $(OBJECTS) $(EXECUTABLE)
 $(EXECUTABLE): $(OBJECTS)
-	$(COMPILER) $(CFLAGS) $(OBJECTS) -o $@
+	$(CC) $(CFLAGS) $(LFLAGS) $(OBJECTS) -o $@
+%: %.o
+	$(CC) -o $@ $< $(CFLAGS)
 clean:
-	rm -rf *.o $(EXECUTABLE)
+	-rm -f $(EXECUTABLE) $(OBJECTS)
