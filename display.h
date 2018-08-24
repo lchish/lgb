@@ -19,6 +19,8 @@ void display_set_key(u8 value);
 void display_init();
 void display_redraw();
 void display_get_input();
+void display_tile_map();
+void display_gpu_memory();
 
 extern Display display;
 #endif

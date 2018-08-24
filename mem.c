@@ -7,6 +7,7 @@
 #include "bios.h"
 #include "gpu.h"
 #include "display.h"
+#include "timer.h"
 
 #define SYSTEM_JOYPAD_TYPE_REGISTER 0xFF00
 #define SERIAL_TRANSFER_DATA 0xFF01
@@ -60,9 +61,21 @@
 
 Memory *memory;
 
+void mbc_init()
+{
+    memory->memory_bank_controllers[1].rom_bank = 0;
+    memory->memory_bank_controllers[1].ram_bank = 0;
+    memory->memory_bank_controllers[1].ram_on = 0;
+    memory->memory_bank_controllers[1].mode = 0;
+}
+
 void mem_init(){
     memory = malloc(sizeof(Memory));
-    memory->in_bios=1;
+    memory->in_bios = 0;
+    memory->cart_type = 0;
+    memory->rom_offset = 0x4000; // Offset for second ROM bank
+    memory->ram_offset = 0;
+    mbc_init();
 }
 
 void load_rom(FILE* f){
@@ -70,7 +83,8 @@ void load_rom(FILE* f){
     while((tmp = getc(f)) != EOF && index < 0x8000){
         memory->rom[index++] = tmp;
     }
-    memory->in_bios = 1;//start off in the bios
+    memory->in_bios = 0;
+    memory->cart_type = memory->rom[0x0147];
 }
 
 //get and set the value at a memory address
@@ -81,32 +95,35 @@ u8 get_mem(u16 address){
     }
     switch (address & 0xF000){
         //ROM 32KB
-    case 0x0000: case 0x1000: case 0x2000: case 0x3000: case 0x4000:
-    case 0x5000: case 0x6000: case 0x7000:
+    case 0x0000: case 0x1000: case 0x2000: case 0x3000:
         return memory->rom[address];
+	// Switched memory
+    case 0x4000: case 0x5000: case 0x6000: case 0x7000:
+	return memory->rom[memory->rom_offset + (address & 0x3FFF)];
         //Video Ram 2KB
     case 0x8000: case 0x9000:
-        return memory->vram[address - 0x8000];
+        return memory->vram[address & 0x1FFF];
         //Switchable ram 2KB
     case 0xA000: case 0xB000:
-        return memory->eram[address - 0xA000];
+	return memory->eram[memory->ram_offset + (address & 0x1FFF)];
         //internal ram 2KB
     case 0xC000: case 0xD000:
-        return memory->wram[address - 0xC000];
+	return memory->wram[address & 0x1FFF];
         //echo internal ram 2KB
     case 0xE000:
-        return memory->wram[address - 0xE000];
+	return memory->wram[address & 0x1FFF];
     case 0xF000:
         switch(address & 0x0F00){
         case 0x000: case 0x100: case 0x200: case 0x300: case 0x400:
         case 0x500: case 0x600: case 0x700: case 0x800: case 0x900:
         case 0xA00: case 0xB00: case 0xC00: case 0xD00:
-            return memory->wram[address - 0xE000];
+	    return memory->wram[address & 0x1FFF];
         case 0xE00:
+	    // 160 bytes of oam memory
             if(address < 0xFEA0)
-                return memory->oam[address - 0xFE00];
-            else   
-                printf("reading from empty ram address %X\n", address);
+                return memory->oam[address & 0xFF];
+            else
+                printf("OAM read error %X\n", address);
         case 0xF00:
             if(address == INTERRUPT_ENABLE){
                 return memory->interrupt_enable;
@@ -115,7 +132,13 @@ u8 get_mem(u16 address){
                 switch(address){
                 case 0xFF00://get keys being pressed
                     return display_get_key();
-                case LCD_CONTROL_REGISTER:
+                case DIVIDER_REGISTER:
+		case TIMER_COUNTER:
+		case TIMER_MODULO:
+		case TIMER_CONTROL:
+		    return timer_read_byte(address);
+
+                case LCD_CONTROL_REGISTER: // FF40
                     return get_lcd_control_register();
                 case LCD_STATUS_REGISTER:
                     return gpu_get_status_register();
@@ -134,12 +157,12 @@ u8 get_mem(u16 address){
                 case INTERRUPT_FLAG:
                     return memory->interrupt_flags;
                 default:
-//printf("Reading from address: %x not handled\n",address);
                     return 0;
                 }
             }
+	    // 128 Bytes of zram
             if(address >= 0xFF80)
-                return memory->zram[address - 0xFF80];
+		return memory->zram[address & 0x7F];
         }
     default:
         fprintf(stderr,"Reading from invalid memory address: %x \n",address);
@@ -153,43 +176,94 @@ u16 get_mem_16(u16 address){
 
 void set_mem(u16 address,u8 value){
     switch(address & 0xF000){
-        //ROM 32KB
-    case 0x0000: case 0x1000: case 0x2000: case 0x3000: case 0x4000:
-    case 0x5000: case 0x6000: case 0x7000:
-        fprintf(stderr,"Rom memory cannot be written to\n");
+	// MBC1: External RAM switch
+    case 0x0000: case 0x1000:
+	switch(memory->cart_type)
+	{
+	case 2:
+	case 3:
+	    memory->memory_bank_controllers[1].ram_on = ((value & 0x0F) == 0x0A) ? 1 : 0;
+	break;
+	}
+	break;
+	// MBC1: ROM bank
+    case 0x2000: case 0x3000:
+	switch(memory->cart_type)
+	{
+	case 1:
+	case 2:
+	case 3:
+	    	// Set lower 5 bits of ROM bank (skipping #0)
+	    value &= 0x1F;
+	    if(!value)
+		value = 1;
+	    memory->memory_bank_controllers[1].rom_bank =
+		(memory->memory_bank_controllers[1].rom_bank & 0x60) + value;
+	    memory->rom_offset = memory->memory_bank_controllers[1].rom_bank * 0x4000;
+	break;
+	}
+	break;
+	// MBC1: RAM bank
+    case 0x4000:
+    case 0x5000:
+	switch(memory->cart_type)
+	{
+	case 1:
+	case 2:
+	case 3:
+	    if(memory->memory_bank_controllers[1].mode) {
+		// RAM mode set bank
+		memory->memory_bank_controllers[1].ram_bank = value & 0x03;
+		memory->ram_offset = memory-> memory_bank_controllers[1].ram_bank * 0x2000;
+	    } else {
+		// ROM mode: set high bits of bank
+		memory->memory_bank_controllers[1].rom_bank =
+		    (memory->memory_bank_controllers[1].rom_bank & 0x1F) +
+		    ((value & 0x03) << 5);
+		memory->rom_offset = memory->memory_bank_controllers[1].rom_bank * 0x4000;
+	    }
+	    break;
+	}
+	break;
+    case 0x6000: case 0x7000:
+	switch(memory->cart_type)
+	{
+	case 2:
+	case 3:
+	    memory->memory_bank_controllers[1].mode = value & 0x01;
+	    break;
+	}
         break;
         //VRAM 2KB
     case 0x8000: case 0x9000:
-        memory->vram[address - 0x8000] = value;
+        memory->vram[address & 0x1FFF] = value;
         if(address <= TILE_DATA_END)
-            update_tile(address);
+            update_tile(address, value);
         return;
         //Swtichable RAM 2KB
     case 0xA000: case 0xB000:
-        memory->eram[address - 0xA000] = value;
+	memory->eram[memory->ram_offset + (address & 0x1FFF)] = value;
         return;
         //Internal RAM 2KB
     case 0xC000: case 0xD000:
-        memory->wram[address - 0xC000] = value;
+        memory->wram[address & 0x1FFF] = value;
         return;
         //Echo internal RAM 0xE000->0xFE00
     case 0xE000:
-        memory->wram[address - 0xE000] = value;
+        memory->wram[address & 0x1FFF] = value;
         return;
     case 0xF000:
         switch(address & 0x0F00){
         case 0x000: case 0x100: case 0x200: case 0x300: case 0x400:
         case 0x500: case 0x600: case 0x700: case 0x800: case 0x900:
         case 0xA00: case 0xB00: case 0xC00: case 0xD00:
-            memory->wram[address - 0xE000] = value;
+            memory->wram[address & 0x1FFF] = value;
             return;
         case 0xE00:
             if(address < 0xFEA0){
-                memory->oam[address - 0xFE00] = value;
-                update_sprite(address);
+                memory->oam[address & 0xFF] = value;
+                update_sprite(address, value);
                 return;
-            }else{
-                printf("writing to empty ram address 0x%X\n", address);
             }
         case 0xF00:
             if(address == INTERRUPT_ENABLE){
@@ -202,6 +276,11 @@ void set_mem(u16 address,u8 value){
                 case 0xFF00://keys
                     display_set_key(value);
                     return;
+		case DIVIDER_REGISTER:
+		case TIMER_COUNTER:
+		case TIMER_MODULO:
+		case TIMER_CONTROL:
+		    return timer_write_byte(address, value);
                 case LCD_CONTROL_REGISTER://lcd control register
                     set_lcd_control_register(value);
                     return;
@@ -214,13 +293,13 @@ void set_mem(u16 address,u8 value){
                     set_scroll_x(value);
                     return;
                 case BACKGROUND_PALETTE_MEMORY://palette
-                    gpu_set_palette(value,BACKGROUND_PALETTE);
+                    gpu_set_palette(value, BACKGROUND_PALETTE);
                     return;
                 case OBJECT_PALETTE0_MEMORY:
-                    gpu_set_palette(value,OBJECT_PALETTE0);
+                    gpu_set_palette(value, OBJECT_PALETTE0);
                     return;
                 case OBJECT_PALETTE1_MEMORY:
-                    gpu_set_palette(value,OBJECT_PALETTE1);
+                    gpu_set_palette(value, OBJECT_PALETTE1);
                     return;
                 case INTERRUPT_FLAG:
                     printf("setting memory interrupt flag to 0x%X\n",value);
@@ -235,12 +314,11 @@ void set_mem(u16 address,u8 value){
                     }
                     return;
                 default:
-                    //printf("Writing to address 0x%X not handled\n",address);
                     return;
                 }
             }
             if(address >= 0xFF80){
-                memory->zram[address - 0xFF80] = value;
+                memory->zram[address & 0x7F] = value;
                 return;
             }
         }
@@ -249,4 +327,3 @@ void set_mem(u16 address,u8 value){
         return;
     }
 }
-

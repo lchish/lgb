@@ -6,9 +6,10 @@
 #include "defs.h"
 #include "mem.h"
 #include "gpu.h"
+#include "timer.h"
 
 //registers
-u8 A; //a and b registers
+u8 A;
 u8 B;
 u8 C;
 u8 D;
@@ -30,71 +31,85 @@ u8 sv_L;
 u8 sv_F;
 
 //cpu information
-int interrupts;
+int interrupt_master_enable;
 unsigned long cpu_time;
 int cpu_halt;
 int cpu_stop;
 int op_time;
 int cpu_exit_loop;
+int PC_skip; // HALT bug
+int interrupt_skip; // Doesn't jump to interrupt vector
 
 FILE *files;
 //convert two u8s to a single u16
-static inline u16 u8_to_u16(const u8 high,const u8 low){
+static inline u16 u8_to_u16(const u8 high, const u8 low)
+{
     return (u16) (((high << 8) & 0xFF00) + low);
 }
 //set/unset flags
-static inline void set_zero(){
+static inline void set_zero()
+{
     F |= 0x80;
 }
-static inline void unset_zero(){
-    F &= 0x7F;
+static inline void unset_zero()
+{
+    F &= ~0x80;
 }
-static inline void set_subtract(){
+static inline void set_subtract()
+{
     F |= 0x40;
 }
-static inline void unset_subtract(){
-    F &= 0xBF;
+static inline void unset_subtract()
+{
+    F &= ~0x40;
 }
-static inline void set_halfcarry(){
-    F |=0x20;
+static inline void set_halfcarry()
+{
+    F |= 0x20;
 }
-static inline void unset_halfcarry(){
-    F &= 0xDF;
+static inline void unset_halfcarry()
+{
+    F &= ~0x20;
 }
-static inline void set_carry(){
+static inline void set_carry()
+{
     F |= 0x10;
 }
-static inline void unset_carry(){
-    F &= 0xEF;
+static inline void unset_carry()
+{
+    F &= ~0x10;
 }
-static inline void reset_flags(){
+static inline void reset_flags()
+{
     F = 0;
 }
 //arithmetic operations
-static inline u8 inc_8(const u8 to_inc){
+static inline u8 inc_8(const u8 to_inc)
+{
     unset_subtract();
     unset_halfcarry();
     unset_zero();
     if((to_inc & 0xF) == 0xF)
         set_halfcarry();
-    if(to_inc == 0xFF){
+    if(to_inc == 0xFF) {
         set_zero();
         return 0;
     }
     return to_inc + 1;
 }
-static inline u8 dec_8(const u8 to_dec){
+static inline u8 dec_8(const u8 to_dec)
+{
     set_subtract();
     unset_halfcarry();
     unset_zero();
-    if((to_dec & 0xF) == 0) set_halfcarry();
-    if(to_dec == 1){
+    if((to_dec & 0xF) == 0)
+	set_halfcarry();
+    if(to_dec == 1)
         set_zero();
-        return 0;
-    }
     return to_dec == 0 ? 0xFF : to_dec - 1;
 }
-static inline u8 add_8(const u8 a,const u8 b){
+static inline u8 add_8(const u8 a,const u8 b)
+{
     unsigned int ret = a + b;
     reset_flags();
     if(!(ret & 0xFF)) set_zero();
@@ -102,7 +117,8 @@ static inline u8 add_8(const u8 a,const u8 b){
     if((a & 0xF) + (b & 0xF) > 0xF) set_halfcarry();
     return ret & 0xFF;
 }
-static inline u8 add_8c(const u8 a,const u8 b){//also add carry flag
+static inline u8 add_8c(const u8 a,const u8 b) //also add carry flag
+{
     unsigned int carry = (F >> 4) & 1;
     unsigned int ret = a + b + carry;
     reset_flags();
@@ -111,7 +127,8 @@ static inline u8 add_8c(const u8 a,const u8 b){//also add carry flag
     if((a & 0xF) + (b & 0xF) + carry > 0xF) set_halfcarry();
     return ret & 0xFF;
 }
-static inline u8 sub_8(const u8 a,const u8 b){
+static inline u8 sub_8(const u8 a,const u8 b)
+{
     u8 ret = (a - b) & 0xFF;
     reset_flags();
     set_subtract();
@@ -121,7 +138,8 @@ static inline u8 sub_8(const u8 a,const u8 b){
     return ret;
 }
 
-static inline u8 sub_8c(const u8 a,const u8 b){
+static inline u8 sub_8c(const u8 a,const u8 b)
+{
     int carry = (F >> 4) & 1;
     int result = a - b - carry;
     reset_flags();
@@ -134,13 +152,16 @@ static inline u8 sub_8c(const u8 a,const u8 b){
         set_halfcarry();
     return (result & 0xFF);
 }
-static inline u16 inc_16(const u16 to_inc){  //sets no flags
+static inline u16 inc_16(const u16 to_inc)   //sets no flags
+{
     return (to_inc + 1) & 0xFFFF;
 }
-static inline u16 dec_16(const u16 to_dec){
+static inline u16 dec_16(const u16 to_dec)
+{
     return (to_dec - 1) & 0xFFFF;
 }
-static inline u16 add_16(const u16 a,const u16 b){
+static inline u16 add_16(const u16 a,const u16 b)
+{
     unset_subtract();
     unset_halfcarry();
     unset_carry();
@@ -150,44 +171,51 @@ static inline u16 add_16(const u16 a,const u16 b){
     return ret & 0xFFFF;
 }
 //logic
-static inline u8 and_8(const u8 a,const u8 b){
+static inline u8 and_8(const u8 a,const u8 b)
+{
     u8 ret = a & b;
     reset_flags();
     set_halfcarry();
     if(!ret) set_zero();
     return ret;
 }
-static inline u8 or_8(const u8 a,const u8 b){
+static inline u8 or_8(const u8 a,const u8 b)
+{
     u8 ret = a | b;
     reset_flags();
     if(!ret) set_zero();
     return ret;
 }
-static inline u8 xor_8(const u8 a,const u8 b){
+static inline u8 xor_8(const u8 a,const u8 b)
+{
     u8 ret = a ^ b;
     reset_flags();
     if(!ret) set_zero();
     return ret;
 }
 
-static inline u8 rot_left_carry_8(const u8 a){
+static inline u8 rot_left_carry_8(const u8 a)
+{
     reset_flags();
     if(a & 0x80) set_carry();
     return ((a << 1) | (a >> 7)) & 0xFF;
 }
-static inline u8 rot_left_8(const u8 a){
+static inline u8 rot_left_8(const u8 a)
+{
     u8 ret;
     ret = ((a << 1) | ((F >> 4) & 0x01)) & 0xFF;
     reset_flags();
     if (a & 0x80) set_carry();
     return ret;
 }
-static inline u8 rot_right_carry_8(const u8 a){
+static inline u8 rot_right_carry_8(const u8 a)
+{
     reset_flags();
     if (a & 0x01) set_carry();
     return ((a >> 1) | (a << 7)) & 0xFF;
 }
-static inline u8 rot_right_8(const u8 a){
+static inline u8 rot_right_8(const u8 a)
+{
     u8 ret;
     ret = ((a >> 1) | (F & 0x10 ? 0x80 : 0x00)) & 0xFF;
     reset_flags();
@@ -195,7 +223,8 @@ static inline u8 rot_right_8(const u8 a){
     return ret ;
 }
 //compare
-static inline void comp_8(const u8 a,const u8 b){
+static inline void comp_8(const u8 a,const u8 b)
+{
     int ret = a - b;
     reset_flags();
     set_subtract();
@@ -204,97 +233,107 @@ static inline void comp_8(const u8 a,const u8 b){
     if((a & 0xF) - (b & 0xF ) < 0) set_halfcarry();
 }
 
-static inline void store_regs(){
-    sv_A = A;
-    sv_B = B;
-    sv_C = C;
-    sv_D = D;
-    sv_E = E;
-    sv_F = F;
-    sv_H = H;
-    sv_L = L;
+/* static inline void store_regs() */
+/* { */
+/*     sv_A = A; */
+/*     sv_B = B; */
+/*     sv_C = C; */
+/*     sv_D = D; */
+/*     sv_E = E; */
+/*     sv_F = F; */
+/*     sv_H = H; */
+/*     sv_L = L; */
+/* } */
+
+/* static inline void load_regs() */
+/* { */
+/*     A = sv_A; */
+/*     B = sv_B; */
+/*     C = sv_C; */
+/*     D = sv_D; */
+/*     E = sv_E; */
+/*     F = sv_F; */
+/*     H = sv_H; */
+/*     L = sv_L; */
+/* } */
+
+static inline void call_nn()
+{
+    set_mem(--SP,((PC + 2) >> 8) & 0xFF);
+    set_mem(--SP, (PC + 2) & 0xFF);
+    PC = u8_to_u16(get_mem(PC + 1),get_mem(PC));
 }
 
-static inline void load_regs(){
-    A = sv_A;
-    B = sv_B;
-    C = sv_C;
-    D = sv_D;
-    E = sv_E;
-    F = sv_F;
-    H = sv_H;
-    L = sv_L;
-}
-
-void cb_opcodes(const u8 opcode){
+void cb_opcodes(const u8 opcode)
+{
     u16 tmp_address;
 
-    switch(opcode){
+    switch(opcode) {
     case 0x00://Rotate B left with carry
         B = rot_left_carry_8(B);
-	if(!B) set_zero();
+        if(!B) set_zero();
         break;
     case 0x01://Rotate C left with carry
         C = rot_left_carry_8(C);
-	if(!C) set_zero();
+        if(!C) set_zero();
         break;
     case 0x02://Rotate D left with carry
         D = rot_left_carry_8(D);
-	if(!D) set_zero();
+        if(!D) set_zero();
         break;
     case 0x03://Rotate E left with carry
         E = rot_left_carry_8(E);
-	if(!E) set_zero();
+        if(!E) set_zero();
         break;
     case 0x04://Rotate H left with carry
         H = rot_left_carry_8(H);
-	if(!H) set_zero();
+        if(!H) set_zero();
         break;
     case 0x05://Rotate L left with carry
         L = rot_left_carry_8(L);
-	if(!L) set_zero();
+        if(!L) set_zero();
         break;
     case 0x06://Rotate value pointed by HL left with carry
         tmp_address = u8_to_u16(H,L);
         set_mem(tmp_address,rot_left_carry_8(get_mem(tmp_address)));
-	if(!get_mem(tmp_address)) set_zero();
+        if(!get_mem(tmp_address)) set_zero();
         break;
     case 0x07://Rotate A left with carry
         A = rot_left_carry_8(A);
-	if(!A) set_zero();
+        if(!A) set_zero();
         break;
     case 0x08://Rotate B right with carry
         B = rot_right_carry_8(B);
-	if(!B) set_zero();
+        if(!B) set_zero();
         break;
     case 0x09://Rotate C right with carry
         C = rot_right_carry_8(C);
-	if(!C) set_zero();
+        if(!C) set_zero();
         break;
     case 0x0A://Rotate D right with carry
         D = rot_right_carry_8(D);
-	if(!D) set_zero();
+        if(!D) set_zero();
         break;
     case 0x0B://Rotate E right with carry
         E = rot_right_carry_8(E);
-	if(!E) set_zero();
+        if(!E) set_zero();
         break;
     case 0x0C://Rotate H right with carry
         H = rot_right_carry_8(H);
-	if(!H) set_zero();
+        if(!H) set_zero();
         break;
     case 0x0D://Rotate L right with carry
         L = rot_right_carry_8(L);
-	if(!L) set_zero();
+        if(!L) set_zero();
         break;
     case 0x0E://Rotate value pointed by HL right with carry
         tmp_address = u8_to_u16(H,L);
         set_mem(tmp_address,rot_right_carry_8(get_mem(tmp_address)));
-	if(!get_mem(tmp_address)) set_zero();
+        if(!get_mem(tmp_address)) set_zero();
         break;
     case 0x0F://Rotate A right with carry
         A = rot_right_carry_8(A);
-	if(!A) set_zero();
+        if(!A) set_zero();
         break;
 
     case 0x10://Rotate B left
@@ -482,7 +521,8 @@ void cb_opcodes(const u8 opcode){
         tmp_address = u8_to_u16(H,L);
         if(get_mem(tmp_address) & 1)
             set_carry();
-        set_mem(tmp_address, (get_mem(tmp_address) >> 1) | (get_mem(tmp_address) & 0x80));
+        set_mem(tmp_address, (get_mem(tmp_address) >> 1) |
+		(get_mem(tmp_address) & 0x80));
         if(!get_mem(tmp_address))
             set_zero();
         break;
@@ -527,7 +567,8 @@ void cb_opcodes(const u8 opcode){
         break;
     case 0x36://swap nibbles in memory at HL
         reset_flags();
-        set_mem(u8_to_u16(H,L), ((get_mem(u8_to_u16(H,L)) & 0xF0) >> 4 | (get_mem(u8_to_u16(H,L)) & 0x0F) << 4) & 0xFF);
+        set_mem(u8_to_u16(H,L), ((get_mem(u8_to_u16(H,
+                                          L)) & 0xF0) >> 4 | (get_mem(u8_to_u16(H,L)) & 0x0F) << 4) & 0xFF);
         if(!get_mem(u8_to_u16(H,L))) set_zero();
         break;
     case 0x37://swap nibbles in A
@@ -612,7 +653,7 @@ void cb_opcodes(const u8 opcode){
         unset_subtract();
         if(!(C & 0x01))set_zero();
         else unset_zero();
-        break; 
+        break;
     case 0x42://Test bit 0 of D
         set_halfcarry();
         unset_subtract();
@@ -709,7 +750,7 @@ void cb_opcodes(const u8 opcode){
         unset_subtract();
         if(!(C & 0x04))set_zero();
         else unset_zero();
-        break; 
+        break;
     case 0x52://Test bit 2 of D
         set_halfcarry();
         unset_subtract();
@@ -757,7 +798,7 @@ void cb_opcodes(const u8 opcode){
         unset_subtract();
         if(!(C & 0x08))set_zero();
         else unset_zero();
-        break; 
+        break;
     case 0x5A://Test bit 3 of D
         set_halfcarry();
         unset_subtract();
@@ -806,7 +847,7 @@ void cb_opcodes(const u8 opcode){
         unset_subtract();
         if(!(C & 0x10))set_zero();
         else unset_zero();
-        break; 
+        break;
     case 0x62://Test bit 4 of D
         set_halfcarry();
         unset_subtract();
@@ -854,7 +895,7 @@ void cb_opcodes(const u8 opcode){
         unset_subtract();
         if(!(C & 0x20))set_zero();
         else unset_zero();
-        break; 
+        break;
     case 0x6A://Test bit 5 of D
         set_halfcarry();
         unset_subtract();
@@ -903,7 +944,7 @@ void cb_opcodes(const u8 opcode){
         unset_subtract();
         if(!(C & 0x40))set_zero();
         else unset_zero();
-        break; 
+        break;
     case 0x72://Test bit 6 of D
         set_halfcarry();
         unset_subtract();
@@ -951,7 +992,7 @@ void cb_opcodes(const u8 opcode){
         unset_subtract();
         if(!(C & 0x80))set_zero();
         else unset_zero();
-        break; 
+        break;
     case 0x7A://Test bit 7 of D
         set_halfcarry();
         unset_subtract();
@@ -1186,200 +1227,200 @@ void cb_opcodes(const u8 opcode){
         break;
 
     case 0xC0://Set bit 0 of B
-      B |= 0x01;
-      break;
+        B |= 0x01;
+        break;
     case 0xC1://Set bit 0 of C
-      C |= 0x01;
-      break;
+        C |= 0x01;
+        break;
     case 0xC2://Set bit 0 of D
-      D |= 0x01;
-      break;
+        D |= 0x01;
+        break;
     case 0xC3://Set bit 0 of E
-      E |= 0x01;
-      break;
+        E |= 0x01;
+        break;
     case 0xC4://Set bit 0 of H
-      H |= 0x01;
-      break;
+        H |= 0x01;
+        break;
     case 0xC5://Set bit 0 of L
-      L |= 0x01;
-      break;
+        L |= 0x01;
+        break;
     case 0xC6://Set bit 0 of address at HL
         set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x01);
-      break;
+        break;
     case 0xC7://Set bit 0 of A
-      A |= 0x01;
-      break;
+        A |= 0x01;
+        break;
     case 0xC8://Set bit 1 of B
-      B |= 0x02;
-      break;
+        B |= 0x02;
+        break;
     case 0xC9://Set bit 1 of C
-      C |= 0x02;
-      break;
+        C |= 0x02;
+        break;
     case 0xCA://Set bit 1 of D
-      D |= 0x02;
-      break;
+        D |= 0x02;
+        break;
     case 0xCB://Set bit 1 of E
-      E |= 0x02;
-      break;
+        E |= 0x02;
+        break;
     case 0xCC://Set bit 1 of H
-      H |= 0x02;
-      break;
+        H |= 0x02;
+        break;
     case 0xCD://Set bit 1 of L
-      L |= 0x02;
-      break;
+        L |= 0x02;
+        break;
     case 0xCE://Set bit 1 of address at HL
         set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x02);
-      break;
+        break;
     case 0xCF://Set bit 1 of A
-      A |= 0x02;
-      break;
+        A |= 0x02;
+        break;
 
     case 0xD0://Set bit 2 of B
-      B |= 0x04;
-      break;
+        B |= 0x04;
+        break;
     case 0xD1://Set bit 2 of C
-      C |= 0x04;
-      break;
+        C |= 0x04;
+        break;
     case 0xD2://Set bit 2 of D
-      D |= 0x04;
-      break;
+        D |= 0x04;
+        break;
     case 0xD3://Set bit 2 of E
-      E |= 0x04;
-      break;
+        E |= 0x04;
+        break;
     case 0xD4://Set bit 2 of H
-      H |= 0x04;
-      break;
+        H |= 0x04;
+        break;
     case 0xD5://Set bit 2 of L
-      L |= 0x04;
-      break;
+        L |= 0x04;
+        break;
     case 0xD6://Set bit 2 of address at HL
         set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x04);
-      break;
+        break;
     case 0xD7://Set bit 2 of A
-      A |= 0x04;
-      break;
+        A |= 0x04;
+        break;
     case 0xD8://Set bit 3 of B
-      B |= 0x08;
-      break;
+        B |= 0x08;
+        break;
     case 0xD9://Set bit 3 of C
-      C |= 0x08;
-      break;
+        C |= 0x08;
+        break;
     case 0xDA://Set bit 3 of D
-      D |= 0x08;
-      break;
+        D |= 0x08;
+        break;
     case 0xDB://Set bit 3 of E
-      E |= 0x08;
-      break;
+        E |= 0x08;
+        break;
     case 0xDC://Set bit 3 of H
-      H |= 0x08;
-      break;
+        H |= 0x08;
+        break;
     case 0xDD://Set bit 3 of L
-      L |= 0x08;
-      break;
+        L |= 0x08;
+        break;
     case 0xDE://Set bit 3 of address at HL
         set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x08);
-      break;
+        break;
     case 0xDF://Set bit 3 of A
-      A |= 0x08;
-      break;
+        A |= 0x08;
+        break;
 
     case 0xE0://Set bit 4 of B
-      B |= 0x10;
-      break;
+        B |= 0x10;
+        break;
     case 0xE1://Set bit 4 of C
-      C |= 0x10;
-      break;
+        C |= 0x10;
+        break;
     case 0xE2://Set bit 4 of D
-      D |= 0x10;
-      break;
+        D |= 0x10;
+        break;
     case 0xE3://Set bit 4 of E
-      E |= 0x10;
-      break;
+        E |= 0x10;
+        break;
     case 0xE4://Set bit 4 of H
-      H |= 0x10;
-      break;
+        H |= 0x10;
+        break;
     case 0xE5://Set bit 4 of L
-      L |= 0x10;
-      break;
+        L |= 0x10;
+        break;
     case 0xE6://Set bit 4 of address at HL
         set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x10);
-      break;
+        break;
     case 0xE7://Set bit 4 of A
-      A |= 0x10;
-      break;
+        A |= 0x10;
+        break;
     case 0xE8://Set bit 5 of B
-      B |= 0x20;
-      break;
+        B |= 0x20;
+        break;
     case 0xE9://Set bit 5 of C
-      C |= 0x20;
-      break;
+        C |= 0x20;
+        break;
     case 0xEA://Set bit 5 of D
-      D |= 0x20;
-      break;
+        D |= 0x20;
+        break;
     case 0xEB://Set bit 5 of E
-      E |= 0x20;
-      break;
+        E |= 0x20;
+        break;
     case 0xEC://Set bit 5 of H
-      H |= 0x20;
-      break;
+        H |= 0x20;
+        break;
     case 0xED://Set bit 5 of L
-      L |= 0x20;
-      break;
+        L |= 0x20;
+        break;
     case 0xEE://Set bit 5 of address at HL
         set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x20);
-      break;
+        break;
     case 0xEF://Set bit 5 of A
-      A |= 0x20;
-      break;
+        A |= 0x20;
+        break;
 
     case 0xF0://Set bit 6 of B
-      B |= 0x40;
-      break;
+        B |= 0x40;
+        break;
     case 0xF1://Set bit 6 of C
-      C |= 0x40;
-      break;
+        C |= 0x40;
+        break;
     case 0xF2://Set bit 6 of D
-      D |= 0x40;
-      break;
+        D |= 0x40;
+        break;
     case 0xF3://Set bit 6 of E
-      E |= 0x40;
-      break;
+        E |= 0x40;
+        break;
     case 0xF4://Set bit 6 of H
-      H |= 0x40;
-      break;
+        H |= 0x40;
+        break;
     case 0xF5://Set bit 6 of L
-      L |= 0x40;
-      break;
+        L |= 0x40;
+        break;
     case 0xF6://Set bit 6 of address at HL
         set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x40);
-      break;
+        break;
     case 0xF7://Set bit 6 of A
-      A |= 0x40;
-      break;
+        A |= 0x40;
+        break;
     case 0xF8://Set bit 7 of B
-      B |= 0x80;
-      break;
+        B |= 0x80;
+        break;
     case 0xF9://Set bit 7 of C
-      C |= 0x80;
-      break;
+        C |= 0x80;
+        break;
     case 0xFA://Set bit 7 of D
-      D |= 0x80;
-      break;
+        D |= 0x80;
+        break;
     case 0xFB://Set bit 7 of E
-      E |= 0x80;
-      break;
+        E |= 0x80;
+        break;
     case 0xFC://Set bit 7 of H
-      H |= 0x80;
-      break;
+        H |= 0x80;
+        break;
     case 0xFD://Set bit 7 of L
-      L |= 0x80;
-      break;
+        L |= 0x80;
+        break;
     case 0xFE://Set bit 7 of address at HL
         set_mem(u8_to_u16(H,L),get_mem(u8_to_u16(H,L)) | 0x80);
-    break;
+        break;
     case 0xFF://Set bit 7 of A
-      A |= 0x80;
-      break;
+        A |= 0x80;
+        break;
 
     default:
         printf("CB opcode 0x%X not implemented yet\n",opcode);
@@ -1389,22 +1430,27 @@ void cb_opcodes(const u8 opcode){
     op_time  += cb_table[opcode];
 }
 
-void cpu_writeout_state(u8 opcode){
-  if(!memory->in_bios)
-    fprintf(files, "opcode %X PC %X SP %X a %X b %X c %X d %X  e %X f %X h %X l %X cycleCounter %lu\n",opcode, PC, SP, A, B, C,D,E,F,H,L, (cpu_time * 4) - 23676308);
+void cpu_writeout_state(u8 opcode)
+{
+    if(!memory->in_bios)
+        fprintf(files,
+                "opcode %X PC %X SP %X a %X b %X c %X d %X  e %X f %X h %X l %X cycleCounter %lu\n",
+                opcode, PC, SP, A, B, C,D,E,F,H,L, (cpu_time * 4) - 23676308);
 }
 
-void cpu_step(u8 opcode){
+void cpu_step(u8 opcode)
+{
     u16 tmp;
     int signed_tmp;
     op_time = 0;
     cpu_writeout_state(opcode);
-    switch(opcode){
+    switch(opcode) {
     case 0x00://no-op
         break;
     case 0x01://load 16bit immediate into BC
-        C=get_mem(PC++);
-        B=get_mem(PC++);
+        C=get_mem(PC);
+        B=get_mem(PC + 1);
+	PC += 2;
         break;
     case 0x02://Save A to address pointed by BC
         set_mem(u8_to_u16(B,C),A);
@@ -1421,7 +1467,8 @@ void cpu_step(u8 opcode){
         B = dec_8(B);
         break;
     case 0x06://Load immediate into B
-        B = get_mem(PC++);
+        B = get_mem(PC);
+	PC++;
         break;
     case 0x07:// rotate left through carry accumulator
         A = rot_left_carry_8(A);
@@ -1429,8 +1476,8 @@ void cpu_step(u8 opcode){
     case 0x08://save sp to a given address
         tmp = (get_mem(PC+1) << 8) + get_mem(PC);
         set_mem(tmp, (SP & 0xFF));
-        set_mem(tmp+1, (SP >> 8) & 0xFF);
-        PC+=2;
+        set_mem(tmp + 1, (SP >> 8) & 0xFF);
+        PC += 2;
         break;
     case 0x09://Add BC to HL
         tmp = add_16(u8_to_u16(B,C),u8_to_u16(H,L));
@@ -1452,7 +1499,8 @@ void cpu_step(u8 opcode){
         C = dec_8(C);
         break;
     case 0x0E://load 8-bit immediate into C
-        C = get_mem(PC++);
+        C = get_mem(PC);
+	PC++;
         break;
     case 0x0F://rotate right carry accumulator
         A = rot_right_carry_8(A);
@@ -1463,8 +1511,9 @@ void cpu_step(u8 opcode){
         cpu_stop = 1;
         break;
     case 0x11://load 16bit immediate into DE
-        E = get_mem(PC++);
-        D = get_mem(PC++);
+        E = get_mem(PC);
+        D = get_mem(PC + 1);
+	PC += 2;
         break;
     case 0x12://Save A to address pointed by DE
         set_mem(u8_to_u16(D,E),A);
@@ -1481,7 +1530,8 @@ void cpu_step(u8 opcode){
         D = dec_8(D);
         break;
     case 0x16://Load immediate into D
-        D = get_mem(PC++);
+        D = get_mem(PC);
+	PC++;
         break;
     case 0x17://rotate accumulator left
         A = rot_left_8(A);
@@ -1518,7 +1568,7 @@ void cpu_step(u8 opcode){
 
     case 0x20://Relative jump by signed immediate if last result was not zero
         signed_tmp = (signed char)get_mem(PC);
-        if(!(F & 0x80)){
+        if(!(F & 0x80)) {
             PC += signed_tmp;
             cpu_time += 1;
             op_time += 1;
@@ -1526,8 +1576,9 @@ void cpu_step(u8 opcode){
         PC++;
         break;
     case 0x21://load 16bit immediate into HL
-        L = get_mem(PC++);
-        H = get_mem(PC++);
+        L = get_mem(PC);
+        H = get_mem(PC + 1);
+	PC += 2;
         break;
     case 0x22://Save A to address pointed by HL and increment HL
         set_mem(u8_to_u16(H,L),A);
@@ -1549,16 +1600,15 @@ void cpu_step(u8 opcode){
     case 0x26://Load immediate into H
         H = get_mem(PC++);
         break;
-    case 0x27:// DAA
-    {
-        int a = A;
-        if(!(F & 0x40)){
+    case 0x27:
+    { // DAA
+        unsigned int a = A;
+        if(!(F & 0x40)) {
             if((F & 0x20) || (a & 0x0F) > 9)
                 a += 0x06;
             if((F & 0x10) || (a > 0x9F))
                 a += 0x60;
-        }
-        else{
+        } else {
             if(F & 0x20)
                 a = (a - 6) & 0xFF;
             if(F & 0x10)
@@ -1571,16 +1621,13 @@ void cpu_step(u8 opcode){
 
         a &= 0xFF;
 
-        if(a == 0)
-            set_zero();
-        else
-            unset_zero();
+	a == 0 ? set_zero() : unset_zero();
         A = (u8)a;
     }
-        break;
+    break;
     case 0x28://Relative jump by signed immediate if last result caused a zero
         signed_tmp = (signed char)get_mem(PC);
-        if(F & 0x80){
+        if(F & 0x80) {
             PC += signed_tmp;
             cpu_time += 1;
             op_time += 1;
@@ -1588,18 +1635,18 @@ void cpu_step(u8 opcode){
         PC++;
         break;
     case 0x29://Add HL to HL
-        tmp = add_16(u8_to_u16(H,L),u8_to_u16(H,L));
+        tmp = add_16(u8_to_u16(H, L), u8_to_u16(H, L));
         H = (tmp >> 8) & 0xFF;
         L = tmp & 0xFF;
         break;
     case 0x2A://Load A from Address pointed to by HL and INC HL
-        A = get_mem(u8_to_u16(H,L));
-        tmp = inc_16(u8_to_u16(H,L));
+        A = get_mem(u8_to_u16(H, L));
+        tmp = inc_16(u8_to_u16(H, L));
         H = (tmp >> 8);
         L = tmp & 0xFF;
         break;
     case 0x2B://Dec HL
-        tmp = dec_16(u8_to_u16(H,L));
+        tmp = dec_16(u8_to_u16(H, L));
         H = (tmp >> 8) & 0xFF;
         L = tmp & 0xFF;
         break;
@@ -1617,10 +1664,10 @@ void cpu_step(u8 opcode){
         set_subtract();
         set_halfcarry();
         break;
-    
+
     case 0x30://Relative jump by signed immediate if last result was not carry
         signed_tmp = (signed char)get_mem(PC);
-        if(!(F & 0x10)){
+        if(!(F & 0x10)) {
             PC+=signed_tmp;
             cpu_time += 1;
             op_time += 1;
@@ -1628,26 +1675,27 @@ void cpu_step(u8 opcode){
         PC++;
         break;
     case 0x31://load 16bit immediate into SP
-        SP = (get_mem(PC+1) << 8) + get_mem(PC);
+        SP = (get_mem(PC + 1) << 8) + get_mem(PC);
         PC += 2;
         break;
-    case 0x32://Save A to address pointed by HL and dec HL
-        set_mem(u8_to_u16(H,L),A);
-        tmp = dec_16(u8_to_u16(H,L));
-        H= (tmp >> 8) & 0xFF;
+    case 0x32:{//Save A to address pointed by HL and dec HL
+        tmp = dec_16(u8_to_u16(H, L));
+        set_mem(u8_to_u16(H, L), A);
+        H = (tmp >> 8) & 0xFF;
         L = (tmp & 0xFF);
         break;
+    }
     case 0x33: //INC SP
         SP = inc_16(SP);
         break;
     case 0x34://INC (HL)
-        set_mem(u8_to_u16(H,L), inc_8(get_mem(u8_to_u16(H,L))));
+        set_mem(u8_to_u16(H, L), inc_8(get_mem(u8_to_u16(H, L))));
         break;
-    case 0x35://DEC (HL)
+    case 0x35: //DEC (HL)
         set_mem(u8_to_u16(H,L), dec_8(get_mem(u8_to_u16(H,L))));
-        break;
+	break;
     case 0x36://Load immediate into address pointed by HL
-        set_mem(u8_to_u16(H,L),get_mem(PC++));
+        set_mem(u8_to_u16(H,L), get_mem(PC++));
         break;
     case 0x37://set carry flag
         unset_subtract();
@@ -1656,7 +1704,7 @@ void cpu_step(u8 opcode){
         break;
     case 0x38://Relative jump by signed immediate if last result caused a carry
         signed_tmp = (signed char)get_mem(PC);
-        if(F & 0x10){
+        if(F & 0x10) {
             PC += signed_tmp;
             cpu_time += 1;
             op_time += 1;
@@ -1664,13 +1712,13 @@ void cpu_step(u8 opcode){
         PC++;
         break;
     case 0x39://Add SP to HL
-        tmp = add_16(SP,u8_to_u16(H,L));
+        tmp = add_16(SP,u8_to_u16(H, L));
         H = (tmp >> 8) & 0xFF;
         L = tmp & 0xFF;
         break;
     case 0x3A://Load A from Addres pointed to by HL and DEC HL
-        A = get_mem(u8_to_u16(H,L));
-        tmp = dec_16(u8_to_u16(H,L));
+        A = get_mem(u8_to_u16(H, L));
+        tmp = dec_16(u8_to_u16(H, L));
         H = (tmp >> 8) & 0xFF;
         L = tmp & 0xFF;
         break;
@@ -1684,7 +1732,8 @@ void cpu_step(u8 opcode){
         A = dec_8(A);
         break;
     case 0x3E://load 8-bit immediate into A
-        A = get_mem(PC++);
+        A = get_mem(PC);
+	PC++;
         break;
     case 0x3F://Complement carry flag
         unset_subtract();
@@ -1854,12 +1903,25 @@ void cpu_step(u8 opcode){
     case 0x75://copy L to Address pointed to by HL
         set_mem(u8_to_u16(H,L),L);
         break;
-    case 0x76://HALT
-        printf("halting cpu\n");
+    case 0x76://HALT has bugz on the gb
+	if(interrupt_master_enable)
+	    cpu_halt = 1;
+	else {
+	    if(memory->interrupt_flags == 0)
+	    {
+		cpu_halt = 1;
+		interrupt_skip = 1;
+	    }else{
+		// HALT bug
+		PC_skip = 1;
+	    }
+	}
+        printf("Halting cpu until an interrupt occurs\n");
+	// Turn interrupts on if they aren't already
         cpu_halt = 1;
         break;
     case 0x77://copy A to Address pointed to by HL
-        set_mem(u8_to_u16(H,L),A);
+        set_mem(u8_to_u16(H, L), A);
         break;
     case 0x78:// copy B to A
         A=B;
@@ -2081,7 +2143,7 @@ void cpu_step(u8 opcode){
         break;
 
     case 0xC0://Return if last result was not zero
-        if(!(F & 0x80)){
+        if(!(F & 0x80)) {
             PC = u8_to_u16(get_mem(SP+1),(get_mem(SP)));
             SP +=2;
             cpu_time += 3;
@@ -2093,25 +2155,25 @@ void cpu_step(u8 opcode){
         B = get_mem(SP++);
         break;
     case 0xC2://Absolute jump to 16 bit location if last result not zero
-        if(!(F & 0x80)){
+        if(!(F & 0x80)) {
             PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
             cpu_time += 1;
             op_time += 1;
-        }else{
+        } else {
             PC+=2;
         }
         break;
     case 0xC3://Absolute jump to 16 bit location
-        PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
+        PC = u8_to_u16(get_mem(PC + 1),get_mem(PC));
         break;
     case 0xC4://call routine at 16 bit immediate if last result not zero
-        if(!(F& 0x80)){
+        if(!(F & 0x80)) {
             set_mem(--SP,((PC+2) >> 8) & 0xFF);
             set_mem(--SP,(PC+2) & 0xFF);
             PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
             cpu_time += 3;
             op_time += 3;
-        }else{
+        } else {
             PC+=2;
         }
         break;
@@ -2128,7 +2190,7 @@ void cpu_step(u8 opcode){
         PC = 0x00;
         break;
     case 0xC8://Return if last result was zero
-        if(F&0x80){
+        if(F & 0x80) {
             PC = u8_to_u16(get_mem(SP+1),(get_mem(SP)));
             SP +=2;
             cpu_time += 3;
@@ -2140,11 +2202,11 @@ void cpu_step(u8 opcode){
         SP += 2;
         break;
     case 0xCA://Absolute jump to 16 bit location if last result zero
-        if(F & 0x80){
+        if(F & 0x80) {
             PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
             cpu_time += 1;
             op_time += 1;
-        }else{
+        } else {
             PC+=2;
         }
         break;
@@ -2152,20 +2214,16 @@ void cpu_step(u8 opcode){
         cb_opcodes(get_mem(PC++));
         break;
     case 0xCC://call routine at 16 bit immediate if last result was zero
-        if(F& 0x80){
-            set_mem(--SP,((PC+2) >> 8) & 0xFF);
-            set_mem(--SP,(PC+2) & 0xFF);
-            PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
+        if(F & 0x80) {
+	    call_nn();
             cpu_time += 3;
             op_time += 3;
-        }else{
+        } else {
             PC+=2;
         }
         break;
     case 0xCD://call routine at 16 bit immediate
-        set_mem(--SP,((PC+2) >> 8) & 0xFF);
-        set_mem(--SP, (PC+2) & 0xFF);
-        PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
+	call_nn();
         break;
     case 0xCE://ADD immediate and carry to A
         A = add_8c(A,get_mem(PC++));
@@ -2176,8 +2234,8 @@ void cpu_step(u8 opcode){
         PC = 0x08;
         break;
     case 0xD0://Return if last result was not carry
-        if(!(F&0x10)){
-            PC = u8_to_u16(get_mem(SP+1),(get_mem(SP)));
+        if(!(F & 0x10)) {
+           PC = u8_to_u16(get_mem(SP+1), (get_mem(SP)));
             SP +=2;
             cpu_time += 3;
             op_time += 3;
@@ -2188,16 +2246,16 @@ void cpu_step(u8 opcode){
         D = get_mem(SP++);
         break;
     case 0xD2://Absolute jump to 16 bit location if last result not carry
-        if(!(F & 0x10)){
+        if(!(F & 0x10)) {
             PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
             cpu_time += 1;
             op_time += 1;
-        }else{
+        } else {
             PC+=2;
         }
         break;
     case 0xD4://call routine at 16 bit immediate if last result not carry
-        if(!(F& 0x10)){
+        if(!(F & 0x10)) {
             //SP-=2;
             set_mem(--SP,((PC + 2) >> 8) & 0xFF);
             set_mem(--SP,((PC + 2) & 0xFF) );
@@ -2206,7 +2264,7 @@ void cpu_step(u8 opcode){
             PC = u8_to_u16(get_mem(PC + 1), get_mem(PC));
             cpu_time += 3;
             op_time += 3;
-        }else{
+        } else {
             PC+=2;
         }
         break;
@@ -2223,7 +2281,7 @@ void cpu_step(u8 opcode){
         PC = 0x10;
         break;
     case 0xD8://Return if last result was carry
-        if(F&0x10){
+        if(F & 0x10) {
             PC = u8_to_u16(get_mem(SP+1),(get_mem(SP)));
             SP += 2;
             cpu_time += 3;
@@ -2231,30 +2289,29 @@ void cpu_step(u8 opcode){
         }
         break;
     case 0xD9://enable interrupts and return
-        interrupts = 1;
-        load_regs();
-        PC = u8_to_u16(get_mem(SP+1),(get_mem(SP)));
+        interrupt_master_enable = 1;
+        PC = u8_to_u16(get_mem(SP + 1),(get_mem(SP)));
         SP += 2;
         break;
     case 0xDA://Absolute jump to 16 bit immediate if last result carry
-        if(F & 0x10){
+        if(F & 0x10) {
             PC = u8_to_u16(get_mem(PC+1),get_mem(PC));
             cpu_time += 1;
             op_time += 1;
-        }else{
+        } else {
             PC+=2;
         }
         break;
     case 0xDB:// not used
         break;
     case 0xDC://call routine at 16 bit immediate if last result carry
-        if(F & 0x10){
+        if(F & 0x10) {
             set_mem(--SP,((PC + 2) >> 8) & 0xFF);
             set_mem(--SP,((PC + 2) & 0xFF) );
             PC = u8_to_u16(get_mem(PC + 1),get_mem(PC));
             cpu_time += 3;
             op_time += 3;
-        }else{
+        } else {
             PC+=2;
         }
         break;
@@ -2268,7 +2325,7 @@ void cpu_step(u8 opcode){
         set_mem(--SP,(PC & 0xFF) );
         PC = 0x18;
         break;
-    
+
     case 0xE0://save A at address pointed to by 0xFF00 + immediate
         set_mem(0xFF00 + get_mem(PC++),A);
         break;
@@ -2295,13 +2352,12 @@ void cpu_step(u8 opcode){
         set_mem(--SP,(PC & 0xFF) );
         PC = 0x20;
         break;
-    case 0xE8://add signed 8bit immediate to SP
-    {
-      int number = (signed char)get_mem(PC++);
+    case 0xE8: { //add signed 8bit immediate to SP
+        int number = (signed char)get_mem(PC++);
         int result = SP + number;
         reset_flags();
         if((SP ^ number ^ (result & 0xFFFF)) & 0x100)
-           set_carry();
+            set_carry();
         if((SP ^ number ^ (result & 0xFFFF)) & 0x10)
             set_halfcarry();
         SP = (u16)(result);
@@ -2339,8 +2395,8 @@ void cpu_step(u8 opcode){
     case 0xF2://Put value at address $FF00 + register C into A
         A = get_mem(0xFF00 + C);
         break;
-    case 0xF3://Disable interrupts. Interrupts are disabled after instruction after this one is executed
-        interrupts = 0;
+    case 0xF3://Disable interrupts.
+        interrupt_master_enable = 0;
         break;
     case 0xF5://PUSH AF onto stack
         set_mem(--SP,A);
@@ -2354,18 +2410,18 @@ void cpu_step(u8 opcode){
         set_mem(--SP,(PC & 0xFF) );
         PC = 0x30;
         break;
-    case 0xF8://Add signed immediate to SP and save result in HL
-    {
-      int number = (signed char)get_mem(PC++);
+    case 0xF8:
+    { //Add signed immediate to SP and save result in HL
+        int number = (signed char)get_mem(PC++);
         int result = SP + number;
         reset_flags();
         if((SP ^ number ^ (result & 0xFFFF)) & 0x100)
-           set_carry();
+            set_carry();
         if((SP ^ number ^ (result & 0xFFFF)) & 0x10)
             set_halfcarry();
         H = (result >> 8) & 0xFF;
         L = result & 0xFF;
-    }    
+    }
     break;
     case 0xF9://copy HL to SP
         SP = u8_to_u16(H,L);
@@ -2374,8 +2430,8 @@ void cpu_step(u8 opcode){
         A = get_mem(u8_to_u16(get_mem(PC+1),get_mem(PC)));
         PC += 2;
         break;
-    case 0xFB://Enable interrupts. Interrupts are enabled after instruction after this one is executed
-        interrupts = 1;
+    case 0xFB://Enable interrupts.
+        interrupt_master_enable = 1;
         break;
     case 0xFC://not used
         break;
@@ -2398,46 +2454,59 @@ void cpu_step(u8 opcode){
     op_time += t[opcode];
 }
 
-
-
-static void vblank_interrupt(){//RST-40
-    store_regs();
-    interrupts = 0;
+static void interrupt(u16 address)
+{
+    interrupt_master_enable = 0;
     set_mem(--SP,(PC >> 8) & 0xFF);
-    set_mem(--SP,(PC & 0xFF) );
+    set_mem(--SP,(PC & 0xFF));
     PC = 0x0040;
     op_time += 3;
     cpu_time += 3;
-}      
+    timer_tick(3);
+    gpu_step(3);
+}
 
-void print_cpu(){
+void print_cpu()
+{
     printf("A: %X F: %X B: %X C: %X D: %X E: %X H: %X L: %X\n",A,F,B,C,D,E,H,L);
     printf("SP: %X\n",SP);
     printf("PC:%X\n",PC);
-    printf("Time %lu cycles\n",cpu_time);
+    printf("Time %d cycles\n", op_time);
 }
 
-void cpu_init(){
+void cpu_init()
+{
     files = fopen("out","w");
-    if(!files){
+    if(!files) {
         printf("couldn't open out");
         exit(1);
     }
     A = B = C = D = E = H = L = F = 0;
-    PC = 0;
-    SP = 0;
-    interrupts = 0;
+
+    PC=0x100;
+    SP=0xFFFE;
+    H = 0x01;
+    L = 0x4D;
+    C = 0x13;
+    E = 0xD8;
+    A = 0x01;
+
+    interrupt_master_enable = 0;
     cpu_time = 0;
-    cpu_halt=0;
-    op_time=0;
-    cpu_exit_loop=0;
+    cpu_halt = 0;
+    op_time = 0;
+    cpu_exit_loop = 0;
+    PC_skip = 0;
+    interrupt_skip = 0;
 }
 
-void cpu_exit(){
+void cpu_exit()
+{
     cpu_exit_loop = 1;
 }
 
-void cpu_run_once(){
+void cpu_run_once()
+{
     print_cpu();
     cpu_step(get_mem(PC++));
 
@@ -2447,18 +2516,50 @@ void cpu_run_once(){
     print_cpu();
 }
 
-void cpu_run(){
-    while(!cpu_exit_loop){
-        cpu_step(get_mem(PC++));
-        // should check that the last instruction wasn't halt
-        if(interrupts && memory->interrupt_enable && memory->interrupt_flags){
+void cpu_run()
+{
+    while(!cpu_exit_loop) {
+	if(cpu_halt){
+	    op_time = 1;
+	}else{
+	    if(PC_skip){
+		cpu_step(get_mem(PC));
+		PC_skip = 0;
+	    }
+	    else
+		cpu_step(get_mem(PC++));
+	    PC &= 0xFFFF;
+	}
+	timer_tick(op_time);
+	gpu_step(op_time);
+
+        if((interrupt_master_enable || cpu_halt) && memory->interrupt_enable && memory->interrupt_flags) {
             int fired = memory->interrupt_enable & memory->interrupt_flags;
-            if(fired & 1){
-                memory->interrupt_flags &= (0xFE);
-                vblank_interrupt();
-            }
+	    cpu_halt = 0;
+	    if(interrupt_skip)
+		interrupt_skip = 0;
+	    else {
+		if(fired & 0x01) { // VBLANK
+		    memory->interrupt_flags &= ~0x01;
+		    interrupt(0x0040);
+		}
+		else if(fired & 0x02) { // LCD STAT
+		    memory->interrupt_flags &= ~0x02;
+		    interrupt(0x0048);
+		}
+		else if(fired & 0x04) { // TIMER
+		    memory->interrupt_flags &= ~0x04;
+		    interrupt(0x0050);
+		}
+		else if(fired & 0x08) { // SERIAL
+		    memory->interrupt_flags &= ~0x08;
+		    interrupt(0x0058);
+		}
+		else if(fired & 0x10) { // Joypad
+		    memory->interrupt_flags &= ~0x10;
+		    interrupt(0x0060);
+		}
+	    }
         }
-        gpu_step(op_time);
-        PC &= 0xFFFF;
     }
 }

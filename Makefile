@@ -1,10 +1,10 @@
 CFLAGS := -Wall -g
 LFLAGS := -lSDL2
-SOURCES = cpu.c mem.c gpu.c main.c display.c cpu_timings.c
+SOURCES = cpu.c mem.c gpu.c main.c display.c cpu_timings.c timer.c
 HFILES=$(CFILES:.c=.h)
 OBJECTS=$(SOURCES:.c=.o)
 EXECUTABLE=lgb
-CC=gcc
+CC=clang
 
 all: $(OBJECTS) $(EXECUTABLE)
 $(EXECUTABLE): $(OBJECTS)

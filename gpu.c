@@ -29,8 +29,8 @@ void gpu_init(){
             gpu->frame_buffer[y][x] =0;
         }
     }
-    memset(gpu->sprites,0,sizeof(Sprite)*40);
-  
+    memset(gpu->sprites, 0, sizeof(Sprite) * 40);
+
 }
 
 u8 gpu_get_line(){
@@ -52,34 +52,37 @@ u8 gpu_get_palette(const PaletteType palette_type){
 }
 
 void gpu_set_palette(const u8 value, const PaletteType palette_type){
-    u8 *palette;
     u8 *palette_colours;
     switch(palette_type){
     case BACKGROUND_PALETTE:
-        palette = &gpu->background_palette;
-        palette_colours = gpu->background_palette_colours;
-        break;
+	palette_colours = gpu->background_palette_colours;
+	break;
     case OBJECT_PALETTE0:
-        palette = &gpu->object_palette0;
-        palette_colours = gpu->object_palette0_colours;
-        break;
+	palette_colours = gpu->object_palette0_colours;
+	break;
     case OBJECT_PALETTE1:
-        palette = &gpu->object_palette1;
-        palette_colours = gpu->object_palette1_colours;
-        break;
+	palette_colours = gpu->object_palette1_colours;
+	break;
     default:
-        fprintf(stderr,"gpu_set_palette: PaletteType not recongised\n");
+        fprintf(stderr, "gpu_set_palette: PaletteType not recongised\n");
         return;
     }
-    *palette = value;
-    palette_colours[0] = (*palette & 0x01 ? 1 : 0)  + 
-        (*palette & 0x02 ? 2 : 0);
-    palette_colours[1] = (*palette & 0x04 ? 1 : 0)  + 
-        (*palette & 0x08 ? 2 : 0);
-    palette_colours[2] = (*palette & 0x10 ? 1 : 0)  + 
-        (*palette & 0x20 ? 2 : 0);
-    palette_colours[3] = (*palette & 0x40 ? 1 : 0)  + 
-        (*palette & 0x80 ? 2 : 0);
+    for(int i = 0; i < 4; i++) {
+	switch((value >> (i * 2)) & 0x03) {
+	case 0: // White or transparent on sprites
+	    palette_colours[i] = 0;
+	    break;
+	case 1: // Light gray
+	    palette_colours[i] = 1;
+	    break;
+	case 2: // Dark gray
+	    palette_colours[i] = 2;
+	    break;
+	case 3: // Black
+	    palette_colours[i] = 3;
+	    break;
+	}
+    }
 }
 
 void set_scroll_x(const u8 value){
@@ -106,7 +109,7 @@ void set_lcd_control_register(const u8 value){
         0x9C00 : 0x9800;
     gpu->window_display_enable = gpu->lcd_control_register & 0x20 ? 1 : 0;
     gpu->tile_data_select = gpu->lcd_control_register & 0x10 ? 0x8000 : 0x8800;
-    gpu->background_tile_map_display = gpu->lcd_control_register & 0x08 ? 
+    gpu->background_tile_map_display = gpu->lcd_control_register & 0x08 ?
         0x9C00 : 0x9800;
     gpu->sprite_size = gpu->lcd_control_register & 0x04 ? 1 : 0;
     gpu->sprite_display_enable = gpu->lcd_control_register & 0x02 ? 1 : 0;
@@ -117,77 +120,114 @@ u8 get_lcd_control_register(){
     return gpu->lcd_control_register;
 }
 
-void update_tile(const u16 address){
-    unsigned int addy = address,tile_num,y,sx,x;
+void update_tile(const u16 address, const u8 value){
+    // Takes 2 bytes at a time
+    // first byte is LSB of a row
+    // second byte is MSB of a row
+    unsigned int addy = address;
+    unsigned int tile_num, y, sx, x;
     if(address & 1)
         addy--;
     tile_num = ((addy - 0x8000) >> 4);
     y = (addy >> 1) & 7;
-    for(x = 0;x < 8;x++){
+    for(x = 0; x < 8; x++){
         sx = (1 << (7 - x));
-        gpu->tiles[tile_num][y][x] = (get_mem(addy) & sx) ? 1 : 0 | 
+        gpu->tiles[tile_num][y][x] = (get_mem(addy) & sx) ? 1 : 0 |
             (get_mem(addy + 1) & sx) ? 2 : 0;
     }
+    display_tile_map();
+    //display_gpu_memory();
+
 }
-void update_sprite(const u16 address){
+
+void update_sprite(const u16 address, const u8 value){
     unsigned int sprite_num = (address - 0xFE00) >> 2;
     Sprite *sprite;
-    u8 val = get_mem(address);
-    
     if (sprite_num < 40){
         sprite = gpu->sprites[sprite_num];
         switch(address & 3){
         case 0:
-            sprite->y = val - 16;
+            sprite->y = value - 16;
             break;
         case 1:
-            sprite->x = val - 8;
+            sprite->x = value - 8;
             break;
         case 2:
-            sprite->tile = val;
+	    sprite->tile = value;
             break;
         case 3:
-            sprite->palette = (val & 0x10) ? 1 : 0;
-            sprite->xflip = (val & 0x20) ? 1 : 0;
-            sprite->yflip = (val & 0x40) ? 1 : 0;
-            sprite->prio = (val & 0x80) ? 1 : 0;
+            sprite->palette = (value & 0x10) ? 1 : 0;
+            sprite->xflip = (value & 0x20) ? 1 : 0;
+            sprite->yflip = (value & 0x40) ? 1 : 0;
+            sprite->prio = (value & 0x80) ? 1 : 0;
             break;
         }
     }
 }
 static void render_scan(){
-    unsigned int i,mapoffset,lineoffset,x,y,tile;
-    Sprite *sprite;
     if(gpu->background_display){
-        mapoffset=((gpu->line+gpu->scroll_y) & 0xFF) >> 3;
-        lineoffset = gpu->scroll_x >> 3;
-        y = (gpu->line + gpu->scroll_y) & 7;
-        x = gpu->scroll_x & 7;
-        tile = get_mem(gpu->background_tile_map_display + (mapoffset * 32) + lineoffset);
-        if(gpu->tile_data_select == 0x8800 && tile < 127 )//unsigned
-            tile += 255;
-        for(i=0;i < WIDTH;i++){
-            gpu->frame_buffer[gpu->line][i] = gpu->tiles[tile][y][x];
-            x++;
-            if(x == 8){
-                x = 0;
-                lineoffset = (lineoffset + 1) & 31;
-                tile = get_mem(gpu->background_tile_map_display + mapoffset * 32 + lineoffset);
-                if(gpu->tile_data_select == 0x8800 && tile < 127 )
-                    tile += 255;
-            }
-        }
-    }
+	unsigned mapoffset = gpu->background_tile_map_display + ((((gpu->line + gpu->scroll_y) & 0xFF) >> 3) << 5);
+        unsigned lineoffset = (gpu->scroll_x >> 3) & 0x1F;
+        unsigned y = (gpu->line + gpu->scroll_y) & 7;
+        unsigned x = gpu->scroll_x & 7;
 
-    //need to add palette support sometime
-    if(gpu->sprite_display_enable){
-        for(i = 0; i < NUM_SPRITES; i++){
-            sprite = gpu->sprites[i];
-            if( sprite->y <= gpu->line && (sprite->y + 8) > gpu->line){
-                for( x = 0; x < 8; x++){
-                    if ((sprite->x + x ) < WIDTH &&
-                        gpu->tiles[sprite->tile][gpu->line - sprite->y][x]){
-                        gpu->frame_buffer[gpu->line][sprite->x+x] = gpu->object_palette0_colours[2];
+	// Check if the indicies are signed
+	if(gpu->tile_data_select == 0x8800) {
+	    unsigned tile = get_mem(mapoffset + lineoffset);
+	    if(tile < 128)
+		tile += 256;
+	    u8 *tilerow = gpu->tiles[tile][y];
+	    for(int i = 0; i < WIDTH; i++){
+		gpu->scanrow[160 - x] = tilerow[x];
+		gpu->frame_buffer[gpu->line][i] = gpu->background_palette_colours[tilerow[x]];
+		x++;
+		if(x == 8){
+		    lineoffset = (lineoffset + 1) & 0x1F;
+		    x = 0;
+		    tile = get_mem(mapoffset + lineoffset);
+		    if(tile < 128)
+			tile += 256;
+		    tilerow = gpu->tiles[tile][y];
+		}
+	    }
+	}else {
+	    u8 *tilerow = gpu->tiles[get_mem(mapoffset + lineoffset)][y];
+	    for(int i = 0; i < 160; i++)
+	    {
+		gpu->scanrow[160 - x] = tilerow[x];
+		gpu->frame_buffer[gpu->line][i] = gpu->background_palette_colours[tilerow[x]];
+		x++;
+		if(x == 8) {
+		    lineoffset = (lineoffset + 1) & 0x1F;
+		    x = 0;
+		    tilerow = gpu->tiles[get_mem(mapoffset + lineoffset)][y];
+		}
+	    }
+	}
+    }
+    if(0 && gpu->sprite_display_enable){
+        for(int i = 0; i < NUM_SPRITES; i++){
+            Sprite *sprite = gpu->sprites[i];
+            if(sprite->y <= gpu->line && (sprite->y + 8) > gpu->line){
+		printf("rendering sprite %d\n", sprite->tile);
+		u8 *tilerow;
+		if(sprite->yflip) {
+		    tilerow = gpu->tiles[sprite->tile][7 - (gpu->line - sprite->y)];
+		} else {
+		    tilerow = gpu->tiles[sprite->tile][gpu->line - sprite->y];
+		}
+
+		u8 *palette = sprite->palette ? gpu->object_palette1_colours :
+		    gpu->object_palette0_colours;
+
+                for(int x = 0; x < 8; x++){
+                    if ((sprite->x + x) >= 0 && (sprite->x + x) < WIDTH &&
+			// Check it's not transparent
+			palette[tilerow[sprite->xflip ? (7 - x) : x]] &&
+			(sprite->prio || !gpu->scanrow[sprite->x + x])){
+
+                        gpu->frame_buffer[gpu->line][sprite->x + x] =
+			    palette[tilerow[sprite->xflip ? (7 - x) : x]];
                     }
                 }
             }
@@ -292,7 +332,7 @@ static  void print_background_data_ram(){
         printf("memory %X : %d\n",0x9900+i,get_mem(0x9900 + i));
     }
 }
-  
+
 void gpu_test(){
     print_screen();
     print_tiles();

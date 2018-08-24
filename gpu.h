@@ -68,6 +68,9 @@ typedef struct{
     u8 background_palette_colours[4];
     u8 object_palette0_colours[4];
     u8 object_palette1_colours[4];
+
+    u8 scanrow[1000];
+
 } GPU;
 
 extern GPU *gpu;
@@ -83,8 +86,8 @@ extern void set_scroll_x(const u8 value);
 extern u8 get_scroll_x();
 extern void set_lcd_control_register(const u8 value);
 extern u8 get_lcd_control_register();
-extern void update_tile(const u16 address);
-extern void update_sprite(const u16 address);
+extern void update_tile(const u16 address, const u8 value);
+extern void update_sprite(const u16 address, const u8 value);
 extern void gpu_test();
 extern u8 gpu_get_line();
 #endif

@@ -4,6 +4,7 @@
 #include "mem.h"
 #include "display.h"
 #include "gpu.h"
+#include "timer.h"
 
 int main(int argc,char **argv){
     FILE *gb_file;
@@ -17,6 +18,7 @@ int main(int argc,char **argv){
     mem_init();
     gpu_init();
     display_init();
+    timer_init();
 
     gb_file = fopen(argv[1],"r");
 
