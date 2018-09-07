@@ -27,7 +27,7 @@ typedef enum {
 }PaletteType;
 
 typedef struct{
-    u8 tile;
+    int tile;
     u8 x;
     u8 y;
     int palette;
@@ -49,6 +49,7 @@ typedef struct{
 
     int line;
     int mode;
+    int curscan;
 
 /*lcd control register stuff */
     u8 lcd_control_register;

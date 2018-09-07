@@ -20,9 +20,9 @@ typedef struct{
 } MemoryBankController;
 
 typedef struct{
-    u8 rom[0x10000]; // 64KB
+    u8 *rom;
     u8 vram[0x2000];
-    u8 eram[0x2000];
+    u8 *eram; // 32KB
     u8 wram[0x2000];
     u8 oam[0xA0];
     u8 zram[0x80];
@@ -30,9 +30,11 @@ typedef struct{
     u8 interrupt_flags;
     int in_bios;
     int cart_type;
-    u16 rom_offset;
-    u16 ram_offset;
-    MemoryBankController memory_bank_controllers[3];
+    int rom_banks;
+    int ram_banks;
+    u32 rom_offset;
+    u32 ram_offset;
+    MemoryBankController memory_bank_controllers[2];
 }Memory;
 
 extern Memory *memory;

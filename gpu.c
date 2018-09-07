@@ -10,8 +10,11 @@ GPU *gpu;
 void gpu_init(){
     unsigned int x,y;
     gpu = malloc(sizeof(GPU));
-    gpu->clock = gpu->mode = gpu->line = 0;
-    gpu->scroll_x = gpu->scroll_y=0;
+    gpu->clock = gpu->mode = 0;
+    gpu->line = 0;
+    gpu->curscan = 0;
+    gpu->scroll_x = 0;
+    gpu->scroll_y = 0;
 
     gpu->lcd_control_register = 0;
     gpu->lcd_display_enable = 0;
@@ -131,11 +134,11 @@ void update_tile(const u16 address, const u8 value){
     tile_num = ((addy - 0x8000) >> 4);
     y = (addy >> 1) & 7;
     for(x = 0; x < 8; x++){
-        sx = (1 << (7 - x));
-        gpu->tiles[tile_num][y][x] = (get_mem(addy) & sx) ? 1 : 0 |
-            (get_mem(addy + 1) & sx) ? 2 : 0;
+        sx = 1 << (7 - x);
+        gpu->tiles[tile_num][y][x] = ((get_mem(addy) & sx) ? 1 : 0) |
+            ((get_mem(addy + 1) & sx) ? 2 : 0);
     }
-    display_tile_map();
+    //display_tile_map();
     //display_gpu_memory();
 
 }
@@ -143,6 +146,7 @@ void update_tile(const u16 address, const u8 value){
 void update_sprite(const u16 address, const u8 value){
     unsigned int sprite_num = (address - 0xFE00) >> 2;
     Sprite *sprite;
+    printf("Updating sprite %d with value %d at address %X \n", sprite_num, value, address);
     if (sprite_num < 40){
         sprite = gpu->sprites[sprite_num];
         switch(address & 3){
@@ -205,11 +209,11 @@ static void render_scan(){
 	    }
 	}
     }
-    if(0 && gpu->sprite_display_enable){
+    if(gpu->sprite_display_enable){
         for(int i = 0; i < NUM_SPRITES; i++){
             Sprite *sprite = gpu->sprites[i];
             if(sprite->y <= gpu->line && (sprite->y + 8) > gpu->line){
-		printf("rendering sprite %d\n", sprite->tile);
+		//printf("rendering sprite %d x %d y %d gpu line %d\n", sprite->tile, sprite->x, sprite->y, gpu->line);
 		u8 *tilerow;
 		if(sprite->yflip) {
 		    tilerow = gpu->tiles[sprite->tile][7 - (gpu->line - sprite->y)];
@@ -255,9 +259,10 @@ void gpu_step(int op_time){
                 gpu->mode = 1;
 		memory->interrupt_flags |= 1;
             }else{//Scanline start
-                gpu->mode=2;
+                gpu->mode = 2;
             }
             gpu->line++;
+	    gpu->curscan += 640;
 	    gpu->clock = 0;
         }
         break;
@@ -267,6 +272,7 @@ void gpu_step(int op_time){
             gpu->line++;
             if(gpu->line > (HEIGHT + 9)){
                 gpu->line = 0;
+		gpu->curscan = 0;
                 gpu->mode = 2;
                 swap_buffers();
             }

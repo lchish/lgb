@@ -72,55 +72,98 @@ void mbc_init()
 void mem_init(){
     memory = malloc(sizeof(Memory));
     memory->in_bios = 0;
-    memory->cart_type = 0;
     memory->rom_offset = 0x4000; // Offset for second ROM bank
-    memory->ram_offset = 0;
+    memory->ram_offset = 0x0000;
+    memory->interrupt_enable = 0;
     mbc_init();
 }
 
 void load_rom(FILE* f){
-    int tmp,index=0;
-    while((tmp = getc(f)) != EOF && index < 0x8000){
-        memory->rom[index++] = tmp;
+    int tmp;
+    u8 cartheader[0x150];
+    char game_title[0x10];
+    for(int i = 0; i < 0x150 && (tmp = getc(f)) != EOF; i++)
+	cartheader[i] = tmp;
+    for(int i = 0; i < 0x10; i++)
+	game_title[i] = cartheader[0x0134 + i];
+    printf("Welcome to %s\n", game_title);
+    fseek(f, 0, SEEK_SET);
+    memory->cart_type = cartheader[0x0147];
+    memory->rom_banks = cartheader[0x0148];
+    memory->ram_banks = cartheader[0x0149];
+    printf("cart_type %X rom_banks %d ram banks %d\n",
+	   memory->cart_type, memory->rom_banks, memory->ram_banks);
+    switch(memory->ram_banks){
+    case 0:
+	memory->eram = NULL;
+	break;
+    case 1: // 2KB
+	memory->eram = malloc(0x800);
+	break;
+    case 2: // 8KB
+	memory->eram = malloc(0x2000);
+	break;
+    case 3: // 32KB
+	memory->eram = malloc(0x8000);
+	break;
+    case 4: // 128KB
+	memory->eram = malloc(0x20000);
+	break;
+    case 5: // 64KB
+	memory->eram = malloc(0x10000);
+	break;
     }
-    memory->in_bios = 0;
-    memory->cart_type = memory->rom[0x0147];
+    memory->rom = malloc(sizeof(u8) * (0x8000 << memory->rom_banks));
+    for(int i = 0; i < 0x8000 << memory->rom_banks && (tmp = getc(f)) != EOF; i++)
+        memory->rom[i] = tmp;
 }
 
-//get and set the value at a memory address
+//get  value at a memory address
 u8 get_mem(u16 address){
-    if(memory->in_bios){
-        if(address < 0x100)
-            return bios[address];
-    }
     switch (address & 0xF000){
         //ROM 32KB
-    case 0x0000: case 0x1000: case 0x2000: case 0x3000:
+    case 0x0000:
+	if(memory->in_bios){
+	    if(address < 0x100)
+		return bios[address];
+	    else {
+		if(address == 0x100)
+		{
+		    memory->in_bios = 0;
+		}
+		return 0;
+	    }
+	} else
+	    return memory->rom[address];
+	break;
+    case 0x1000: case 0x2000: case 0x3000:
         return memory->rom[address];
-	// Switched memory
+
+    // Switched memory
     case 0x4000: case 0x5000: case 0x6000: case 0x7000:
 	return memory->rom[memory->rom_offset + (address & 0x3FFF)];
+
         //Video Ram 2KB
     case 0x8000: case 0x9000:
         return memory->vram[address & 0x1FFF];
-        //Switchable ram 2KB
+
+        // External switchable ram 2KB
     case 0xA000: case 0xB000:
 	return memory->eram[memory->ram_offset + (address & 0x1FFF)];
+
         //internal ram 2KB
-    case 0xC000: case 0xD000:
-	return memory->wram[address & 0x1FFF];
-        //echo internal ram 2KB
-    case 0xE000:
+    case 0xC000: case 0xD000: case 0xE000:
 	return memory->wram[address & 0x1FFF];
     case 0xF000:
         switch(address & 0x0F00){
+	    // echo internal ram
         case 0x000: case 0x100: case 0x200: case 0x300: case 0x400:
         case 0x500: case 0x600: case 0x700: case 0x800: case 0x900:
         case 0xA00: case 0xB00: case 0xC00: case 0xD00:
 	    return memory->wram[address & 0x1FFF];
         case 0xE00:
 	    // 160 bytes of oam memory
-            if(address < 0xFEA0)
+            if((address & 0xFF) < 0xA0)
                 return memory->oam[address & 0xFF];
             else
                 printf("OAM read error %X\n", address);
@@ -180,12 +223,13 @@ void set_mem(u16 address,u8 value){
     case 0x0000: case 0x1000:
 	switch(memory->cart_type)
 	{
+	case 1:
 	case 2:
 	case 3:
 	    memory->memory_bank_controllers[1].ram_on = ((value & 0x0F) == 0x0A) ? 1 : 0;
-	break;
+	    printf("ram on %X\n", memory->memory_bank_controllers[1].ram_on);
+	    break;
 	}
-	break;
 	// MBC1: ROM bank
     case 0x2000: case 0x3000:
 	switch(memory->cart_type)
@@ -194,13 +238,11 @@ void set_mem(u16 address,u8 value){
 	case 2:
 	case 3:
 	    	// Set lower 5 bits of ROM bank (skipping #0)
+	    memory->memory_bank_controllers[1].rom_bank &= 0x60;
 	    value &= 0x1F;
-	    if(!value)
-		value = 1;
-	    memory->memory_bank_controllers[1].rom_bank =
-		(memory->memory_bank_controllers[1].rom_bank & 0x60) + value;
+	    if(!value) value = 1;
+	    memory->memory_bank_controllers[1].rom_bank |= value;
 	    memory->rom_offset = memory->memory_bank_controllers[1].rom_bank * 0x4000;
-	break;
 	}
 	break;
 	// MBC1: RAM bank
@@ -210,16 +252,14 @@ void set_mem(u16 address,u8 value){
 	{
 	case 1:
 	case 2:
-	case 3:
 	    if(memory->memory_bank_controllers[1].mode) {
 		// RAM mode set bank
 		memory->memory_bank_controllers[1].ram_bank = value & 0x03;
-		memory->ram_offset = memory-> memory_bank_controllers[1].ram_bank * 0x2000;
+		memory->ram_offset = memory->memory_bank_controllers[1].ram_bank * 0x2000;
 	    } else {
 		// ROM mode: set high bits of bank
-		memory->memory_bank_controllers[1].rom_bank =
-		    (memory->memory_bank_controllers[1].rom_bank & 0x1F) +
-		    ((value & 0x03) << 5);
+		memory->memory_bank_controllers[1].rom_bank &= 0x1F;
+		memory->memory_bank_controllers[1].rom_bank |= ((value & 0x03) << 5);
 		memory->rom_offset = memory->memory_bank_controllers[1].rom_bank * 0x4000;
 	    }
 	    break;
@@ -228,9 +268,9 @@ void set_mem(u16 address,u8 value){
     case 0x6000: case 0x7000:
 	switch(memory->cart_type)
 	{
+	case 1:
 	case 2:
-	case 3:
-	    memory->memory_bank_controllers[1].mode = value & 0x01;
+	    memory->memory_bank_controllers[1].mode = value & 1;
 	    break;
 	}
         break;
@@ -267,7 +307,6 @@ void set_mem(u16 address,u8 value){
             }
         case 0xF00:
             if(address == INTERRUPT_ENABLE){
-                printf("setting memory interrupts to 0x%X\n",value);
                 memory->interrupt_enable = value;
                 return;
             }
@@ -302,7 +341,6 @@ void set_mem(u16 address,u8 value){
                     gpu_set_palette(value, OBJECT_PALETTE1);
                     return;
                 case INTERRUPT_FLAG:
-                    printf("setting memory interrupt flag to 0x%X\n",value);
                     memory->interrupt_flags = value;
                     return;
                 case DISABLE_BOOT_ROM://disable boot rom

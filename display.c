@@ -7,8 +7,8 @@
 #include "cpu.h"
 #include "mem.h"
 
-#define TILE_WIDTH 64
-#define TILE_HEIGHT 64
+#define TILE_WIDTH 128
+#define TILE_HEIGHT 128
 
 typedef struct {
     SDL_Window *window;
@@ -190,7 +190,8 @@ void display_tile_map() {
 	    }
 	}
     }
-    SDL_UpdateTexture(tile_window->texture, NULL, tile_window->pixels, TILE_WIDTH * sizeof(Uint32));
+    SDL_UpdateTexture(tile_window->texture, NULL,
+		      tile_window->pixels, TILE_WIDTH * sizeof(Uint32));
     SDL_RenderClear(tile_window->renderer);
     SDL_RenderCopy(tile_window->renderer, tile_window->texture, NULL, NULL);
     SDL_RenderPresent(tile_window->renderer);
@@ -270,8 +271,8 @@ void display_init(){
         exit(1);
     }
     atexit(SDL_Quit);
-    display_create_window(tile_window, "tile map", TILE_WIDTH, TILE_HEIGHT);
-    display_create_window(disp_mem_window, "display memory map", TILE_WIDTH, TILE_HEIGHT);
+    //display_create_window(tile_window, "tile map", TILE_WIDTH, TILE_HEIGHT);
+    //display_create_window(disp_mem_window, "display memory map", TILE_WIDTH, TILE_HEIGHT);
     display_create_window(window, "lgb", WIDTH, HEIGHT);
     display.exit = 0;
 }
