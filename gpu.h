@@ -1,6 +1,7 @@
 #ifndef GPU_H
 #define GPU_H
 
+#include <time.h>
 #include "defs.h"
 #include "types.h"
 
@@ -19,6 +20,8 @@
 #define VIDEO_RAM_START 0x8000
 #define VIDEO_RAM_END 0x9FFF
 #define TILE_DATA_END 0x97FF
+
+#define FULL_FRAME_TIME_US 16667 /* microseconds */
 
 typedef enum {
     BACKGROUND_PALETTE,
@@ -50,6 +53,9 @@ typedef struct{
     int line;
     int mode;
     int curscan;
+
+    /* Internal to the emulator */
+    struct timespec frame_start_time;
 
 /*lcd control register stuff */
     u8 lcd_control_register;

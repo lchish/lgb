@@ -257,6 +257,17 @@ static void swap_buffers(){
     }
     if(gpu->lcd_display_enable)
         display_redraw();
+    /* Sleep until the frame time is finished */
+    struct timespec frame_end_time;
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &frame_end_time);
+    long timedelta = FULL_FRAME_TIME_US -
+      ((frame_end_time.tv_nsec - gpu->frame_start_time.tv_nsec) / 1000);
+    if(timedelta > 0 && timedelta < FULL_FRAME_TIME_US)
+	usleep(timedelta);
+
+    /* Set new frame start time */
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &gpu->frame_start_time);
+
 }
 
 void gpu_step(int op_time){
