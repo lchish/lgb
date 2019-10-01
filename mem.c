@@ -208,18 +208,17 @@ u8 get_mem(u16 address){
 		  return 0; //TODO
 
                 case LCD_CONTROL_REGISTER: // FF40
-                    return get_lcd_control_register();
+                    return gpu_get_lcd_control_register();
                 case LCD_STATUS_REGISTER:
                     return gpu_get_status_register();
                 case LCD_SCROLL_Y_REGISTER:
-                    return get_scroll_y();
+                    return gpu_get_scroll_y();
                 case LCD_SCROLL_X_REGISTER://lcd scroll X register
-                    return get_scroll_x();
+                    return gpu_get_scroll_x();
                 case CURRENT_FRAME_LINE://get the current frame line
                     return gpu_get_line();
 		case FRAME_LINE_COMPARE:
-		  printf("Need to implement FLC\n");
-		  return 0;
+		  return gpu_get_line_compare();
 		case DMA_TRANSFER:
 		  printf("Shouldn't be reading DMA_TRANSFER\n");
 		  return 0;
@@ -229,12 +228,10 @@ u8 get_mem(u16 address){
                     return gpu_get_palette(OBJECT_PALETTE0);
                 case OBJECT_PALETTE1_MEMORY:
                     return gpu_get_palette(OBJECT_PALETTE1);
-		case WINDOW_X_POS:
-		  printf("Implement read window x %d\n");
-		  return 0;
 		case WINDOW_Y_POS:
-		  printf("Implement read window y %d\n");
-		  return 0;
+		  return gpu_get_window_y();
+		case WINDOW_X_POS:
+		  return gpu_get_window_x();
                 case DISABLE_BOOT_ROM://disable boot rom
 		  fprintf(stderr,"Why would you read disabling the boot rom?\n");
 		  return 0;
@@ -325,7 +322,7 @@ void set_mem(u16 address, u8 value){
     case 0x8000: case 0x9000:
         memory->vram[address & 0x1FFF] = value;
         if(address <= TILE_DATA_END)
-            update_tile(address, value);
+            gpu_update_tile(address, value);
         return;
         //Swtichable RAM 2KB
     case 0xA000: case 0xB000:
@@ -349,7 +346,7 @@ void set_mem(u16 address, u8 value){
         case 0xE00:
             if(address < 0xFEA0){
                 memory->oam[address & 0xFF] = value;
-                update_sprite(address, value);
+                gpu_update_sprite(address, value);
                 return;
             }
         case 0xF00:
@@ -392,22 +389,23 @@ void set_mem(u16 address, u8 value){
 		case SOUND_OUTPUT_SELECTION_TERMINAL:
 		case SOUND_ON_OFF:
 		  return; //TODO
-                case LCD_CONTROL_REGISTER://lcd control register
-                    set_lcd_control_register(value);
+                case LCD_CONTROL_REGISTER:
+                    gpu_set_lcd_control_register(value);
                     return;
-                case LCD_STATUS_REGISTER://lcd status register
+                case LCD_STATUS_REGISTER:
+		  gpu_set_status_register(value);
+		  return;
+                case LCD_SCROLL_Y_REGISTER:
+                    gpu_set_scroll_y(value);
                     return;
-                case LCD_SCROLL_Y_REGISTER://lcd scroll Y register
-                    set_scroll_y(value);
-                    return;
-                case LCD_SCROLL_X_REGISTER://lcd scroll X register
-                    set_scroll_x(value);
+                case LCD_SCROLL_X_REGISTER:
+                    gpu_set_scroll_x(value);
                     return;
 		case CURRENT_FRAME_LINE:
-		  printf("Shouldn't change frame line\n");
+		  gpu_set_line();
 		  return;
 		case FRAME_LINE_COMPARE:
-		  printf("Shouldn't compare frame line??\n");
+		  gpu_set_line_compare(value);
 		  return;
 		case DMA_TRANSFER:
 		  {
@@ -425,11 +423,11 @@ void set_mem(u16 address, u8 value){
                 case OBJECT_PALETTE1_MEMORY:
                     gpu_set_palette(value, OBJECT_PALETTE1);
                     return;
-		case WINDOW_X_POS:
-		  printf("Implement window x %d\n", value);
-		  return;
 		case WINDOW_Y_POS:
-		  printf("Implement window y %d\n", value);
+		  gpu_set_window_y(value);
+		  return;
+		case WINDOW_X_POS:
+		  gpu_set_window_x(value);
 		  return;
                 case DISABLE_BOOT_ROM://disable boot rom
                     if(value == 1)

@@ -49,8 +49,11 @@ typedef struct{
 //scroll registers
     u8 scroll_x;
     u8 scroll_y;
+    u8 window_x;
+    u8 window_y;
 
     int line;
+    int line_compare;
     int mode;
     int curscan;
 
@@ -83,18 +86,25 @@ typedef struct{
 extern GPU *gpu;
 //extern int gpu_clock;
 extern void gpu_init();
+extern u8 gpu_get_line();
+extern void gpu_set_line();
+extern u8 gpu_get_line_compare();
+extern void gpu_set_line_compare(u8 value);
 extern void gpu_step(const int op_time);
 extern u8 gpu_get_status_register();
+extern void gpu_set_status_register(const u8 value);
 extern u8 gpu_get_palette(const PaletteType palette_type);
 extern void gpu_set_palette(const u8 value, const PaletteType palette_type);
-extern void set_scroll_y(const u8 value);
-extern u8 get_scroll_y();
-extern void set_scroll_x(const u8 value);
-extern u8 get_scroll_x();
-extern void set_lcd_control_register(const u8 value);
-extern u8 get_lcd_control_register();
-extern void update_tile(const u16 address, const u8 value);
-extern void update_sprite(const u16 address, const u8 value);
-extern void gpu_test();
-extern u8 gpu_get_line();
+extern void gpu_set_scroll_y(const u8 value);
+extern u8 gpu_get_scroll_y();
+extern void gpu_set_scroll_x(const u8 value);
+extern u8 gpu_get_scroll_x();
+extern void gpu_set_window_y(const u8 value);
+extern u8 gpu_get_window_y();
+extern void gpu_set_window_x(const u8 value);
+extern u8 gpu_get_window_x();
+extern void gpu_set_lcd_control_register(const u8 value);
+extern u8 gpu_get_lcd_control_register();
+extern void gpu_update_tile(const u16 address, const u8 value);
+extern void gpu_update_sprite(const u16 address, const u8 value);
 #endif

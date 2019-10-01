@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include "gpu.h"
 #include "defs.h"
 #include "types.h"
@@ -23,7 +24,6 @@ void gpu_init(){
     gpu->tile_data_select = 0x8800;
     gpu->background_tile_map_display = 0x9800;
     gpu->background_display = 0;
-    gpu->window_display_enable = 0;
     gpu->sprite_display_enable = 0;
 
     for(y=0;y<HEIGHT;y++){
@@ -38,6 +38,16 @@ void gpu_init(){
 
 u8 gpu_get_line(){
     return gpu->line & 0xFF;
+}
+/* Writing to the gpu line register will reset it */
+void gpu_set_line(){
+  gpu->line = 0;
+}
+u8 gpu_get_line_compare(){
+  return gpu->line_compare & 0xFF;
+}
+void gpu_set_line_compare(const u8 value){
+  gpu->line_compare = value;
 }
 
 u8 gpu_get_palette(const PaletteType palette_type){
@@ -88,23 +98,38 @@ void gpu_set_palette(const u8 value, const PaletteType palette_type){
     }
 }
 
-void set_scroll_x(const u8 value){
+void gpu_set_scroll_x(const u8 value){
     gpu->scroll_x = value;
 }
 
-u8 get_scroll_x(){
+u8 gpu_get_scroll_x(){
     return gpu->scroll_x;
 }
 
-void set_scroll_y(const u8 value){
+void gpu_set_scroll_y(const u8 value){
     gpu->scroll_y = value;
 }
 
-u8 get_scroll_y(){
+u8 gpu_get_scroll_y(){
     return gpu->scroll_y;
 }
 
-void set_lcd_control_register(const u8 value){
+void gpu_set_window_x(const u8 value){
+  printf("This game is using the window\n");
+  gpu->window_x = value;
+}
+u8 gpu_get_window_x(){
+  return gpu->window_x;
+}
+void gpu_set_window_y(const u8 value){
+  printf("This game is using the window\n");
+  gpu->window_y = value;
+}
+u8 gpu_get_window_y(){
+  return gpu->window_y;
+}
+
+void gpu_set_lcd_control_register(const u8 value){
     gpu->lcd_control_register = value;
     gpu->lcd_display_enable = gpu->lcd_control_register & 0x80 ? 1:0;
     gpu->window_tile_map_display_select = gpu->lcd_control_register & 0x40 ?
@@ -118,11 +143,11 @@ void set_lcd_control_register(const u8 value){
     gpu->background_display = gpu->lcd_control_register & 0x01 ? 1 : 0;
 }
 
-u8 get_lcd_control_register(){
+u8 gpu_get_lcd_control_register(){
     return gpu->lcd_control_register;
 }
 
-void update_tile(const u16 address, const u8 value){
+void gpu_update_tile(const u16 address, const u8 value){
     // Takes 2 bytes at a time
     // first byte is LSB of a row
     // second byte is MSB of a row
@@ -142,7 +167,7 @@ void update_tile(const u16 address, const u8 value){
 
 }
 
-void update_sprite(const u16 address, const u8 value){
+void gpu_update_sprite(const u16 address, const u8 value){
     unsigned int sprite_num = (address - 0xFE00) >> 2;
     Sprite *sprite;
     /* printf("Updating sprite %d with value %d at address %X \n", */
@@ -259,14 +284,14 @@ static void swap_buffers(){
         display_redraw();
     /* Sleep until the frame time is finished */
     struct timespec frame_end_time;
-    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &frame_end_time);
+    clock_gettime(CLOCK_MONOTONIC, &frame_end_time);
     long timedelta = FULL_FRAME_TIME_US -
       ((frame_end_time.tv_nsec - gpu->frame_start_time.tv_nsec) / 1000);
     if(timedelta > 0 && timedelta < FULL_FRAME_TIME_US)
 	usleep(timedelta);
 
     /* Set new frame start time */
-    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &gpu->frame_start_time);
+    clock_gettime(CLOCK_MONOTONIC, &gpu->frame_start_time);
 
 }
 
@@ -313,55 +338,10 @@ void gpu_step(int op_time){
         break;
     }
 }
+void gpu_set_status_register(const u8 value){
+  printf("gpu_set_status_register %X\n", value);
+}
 
 u8 gpu_get_status_register(){
-    return gpu->mode;
-}
-
-static void print_screen(){
-    unsigned int x,y;
-    for(y=0;y<HEIGHT;y++){
-        for(x=0;x<WIDTH;x++){
-            printf("%s",gpu->screen[y][x]==0?" ":"a");
-        }
-        printf("\n");
-    }
-}
-
-static void print_tiles(){
-    unsigned int i,j,k;
-    for(i=0;i<27;i++){
-        printf("Tile : %d\n",i);
-        for(j=0;j<8;j++){
-            printf("row %d:",j);
-            for(k=0;k<8;k++){
-                printf("%s",gpu->tiles[i][j][k]==1? "a" :" ");
-            }
-            printf("\n");
-        }
-    }
-}
-
-static  void print_tile_ram(){
-    unsigned int i,j;
-    for(i=0;i<26;i++){
-        printf("Tile %X:\n",i);
-        for(j=0;j<16;j++){
-            printf("memory %d : %X\n",j,get_mem(0x8000 + i*16 + j));
-        }
-    }
-}
-
-static  void print_background_data_ram(){
-    unsigned int i;
-    for(i=0;i<=0x2f;i++){
-        printf("memory %X : %d\n",0x9900+i,get_mem(0x9900 + i));
-    }
-}
-
-void gpu_test(){
-    print_screen();
-    print_tiles();
-    print_tile_ram();
-    print_background_data_ram();
+  return gpu->mode | (gpu->line == gpu->line_compare ? 0x04 : 0);
 }
