@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <json-c/json.h>
+#include <time.h>
 #include "cpu.h"
 #include "cpu_timings.h"
 #include "types.h"
@@ -8,6 +9,9 @@
 #include "mem.h"
 #include "gpu.h"
 #include "timer.h"
+
+/* In nano seconds */
+#define CPU_CLOCK_TIME 238
 
 Cpu *cpu;
 
@@ -2548,6 +2552,11 @@ void cpu_run()
 
 
     while(!cpu->cpu_exit_loop) {
+#ifdef CPU_CYCLE_TIMING
+      int total_cycles = 0;
+      struct timespec start_time;
+      clock_gettime(CLOCK_MONOTONIC, &start_time);
+#endif
 	cpu->cycle_counter = 0;
 	cpu->jump_taken = 0;
 	if(cpu->cpu_halt){
@@ -2562,15 +2571,20 @@ void cpu_run()
 	    else{
 		u8 tmp = pc_read();
 		cpu_step(tmp);
-		u8 cycles = load_json(med_obj, tmp, cpu->jump_taken ? 1 : 0, "unprefixed");
+		u8 cycles = load_json(med_obj, tmp, cpu->jump_taken ? 1 : 0,
+				      "unprefixed");
 		if(cpu->cycle_counter != cycles && tmp != 0xCB)
-		    printf("!!!! expected %d got %d opcode %X\n", cycles, cpu->cycle_counter, tmp);
+		    printf("!!!! expected %d got %d opcode %X\n", cycles,
+			   cpu->cycle_counter, tmp);
 	    }
 	}
 	timer_tick(cpu->cycle_counter);
 	gpu_step(cpu->cycle_counter);
-
-        if((cpu->interrupt_master_enable || cpu->cpu_halt) && memory->interrupt_enable && memory->interrupt_flags) {
+#ifdef CPU_CYCLE_TIMING
+	total_cycles += cpu->cycle_counter;
+#endif
+        if((cpu->interrupt_master_enable || cpu->cpu_halt)
+	   && memory->interrupt_enable && memory->interrupt_flags) {
             int fired = memory->interrupt_enable & memory->interrupt_flags;
 	    cpu->cpu_halt = 0;
 	    if(cpu->interrupt_skip)
@@ -2579,24 +2593,54 @@ void cpu_run()
 		if(fired & 0x01) { // VBLANK
 		    memory->interrupt_flags &= ~0x01;
 		    interrupt(0x0040);
+#ifdef CPU_CYCLE_TIMING
+		    total_cycles += 12;
+#endif
 		}
 		else if(fired & 0x02) { //LCD STAT
 		    memory->interrupt_flags &= ~0x02;
 		    interrupt(0x0048);
+#ifdef CPU_CYCLE_TIMING
+		    total_cycles += 12;
+#endif
 		}
 		else if(fired & 0x04) { // TIMER
 		    memory->interrupt_flags &= ~0x04;
 		    interrupt(0x0050);
+#ifdef CPU_CYCLE_TIMING
+		    total_cycles += 12;
+#endif
 		}
 		else if(fired & 0x08) { // SERIAL
 		    memory->interrupt_flags &= ~0x08;
 		    interrupt(0x0058);
+#ifdef CPU_CYCLE_TIMING
+		    total_cycles += 12;
+#endif
 		}
 		else if(fired & 0x10) { // Joypad
 		    memory->interrupt_flags &= ~0x10;
 		    interrupt(0x0060);
+#ifdef CPU_CYCLE_TIMING
+		    total_cycles += 12;
+#endif
 		}
 	    }
         }
+#ifdef CPU_CYCLE_TIMING
+	struct timespec end_time;
+	clock_gettime(CLOCK_MONOTONIC, &end_time);
+	long cycle_time = end_time.tv_nsec - start_time.tv_nsec;
+	long expected_cycle_time = CPU_CLOCK_TIME * total_cycles;
+	long cycle_difference = expected_cycle_time - cycle_time;
+	if(cycle_difference > 0)
+	  {
+	    struct timespec sleep_time;
+	    sleep_time.tv_sec = 0;
+	    sleep_time.tv_nsec = cycle_difference;
+	    nanosleep(&sleep_time, NULL);
+	  }
+#endif
+
     }
 }
