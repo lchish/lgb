@@ -106,7 +106,6 @@ u8 get_scroll_y(){
 
 void set_lcd_control_register(const u8 value){
     gpu->lcd_control_register = value;
-
     gpu->lcd_display_enable = gpu->lcd_control_register & 0x80 ? 1:0;
     gpu->window_tile_map_display_select = gpu->lcd_control_register & 0x40 ?
         0x9C00 : 0x9800;
@@ -146,9 +145,10 @@ void update_tile(const u16 address, const u8 value){
 void update_sprite(const u16 address, const u8 value){
     unsigned int sprite_num = (address - 0xFE00) >> 2;
     Sprite *sprite;
-    printf("Updating sprite %d with value %d at address %X \n", sprite_num, value, address);
+    /* printf("Updating sprite %d with value %d at address %X \n", */
+    /* 	   sprite_num, value, address); */
     if (sprite_num < 40){
-        sprite = gpu->sprites[sprite_num];
+        sprite = &gpu->sprites[sprite_num];
         switch(address & 3){
         case 0:
             sprite->y = value - 16;
@@ -167,10 +167,15 @@ void update_sprite(const u16 address, const u8 value){
             break;
         }
     }
+/*     printf("sprite x:%d\ty:%d\ttile:%d\tpalette:%d\txflip:%d\tyflip:%d\ */
+/* \tprio:%d\n", */
+/* 	   sprite->x, sprite->y, sprite->tile, sprite->palette, sprite->xflip, */
+/* 	   sprite->yflip, sprite->prio); */
 }
 static void render_scan(){
     if(gpu->background_display){
-	unsigned mapoffset = gpu->background_tile_map_display + ((((gpu->line + gpu->scroll_y) & 0xFF) >> 3) << 5);
+	unsigned mapoffset = gpu->background_tile_map_display +
+	  ((((gpu->line + gpu->scroll_y) & 0xFF) >> 3) << 5);
         unsigned lineoffset = (gpu->scroll_x >> 3) & 0x1F;
         unsigned y = (gpu->line + gpu->scroll_y) & 7;
         unsigned x = gpu->scroll_x & 7;
@@ -183,7 +188,8 @@ static void render_scan(){
 	    u8 *tilerow = gpu->tiles[tile][y];
 	    for(int i = 0; i < WIDTH; i++){
 		gpu->scanrow[160 - x] = tilerow[x];
-		gpu->frame_buffer[gpu->line][i] = gpu->background_palette_colours[tilerow[x]];
+		gpu->frame_buffer[gpu->line][i] =
+		  gpu->background_palette_colours[tilerow[x]];
 		x++;
 		if(x == 8){
 		    lineoffset = (lineoffset + 1) & 0x1F;
@@ -199,7 +205,8 @@ static void render_scan(){
 	    for(int i = 0; i < 160; i++)
 	    {
 		gpu->scanrow[160 - x] = tilerow[x];
-		gpu->frame_buffer[gpu->line][i] = gpu->background_palette_colours[tilerow[x]];
+		gpu->frame_buffer[gpu->line][i] =
+		  gpu->background_palette_colours[tilerow[x]];
 		x++;
 		if(x == 8) {
 		    lineoffset = (lineoffset + 1) & 0x1F;
@@ -211,12 +218,14 @@ static void render_scan(){
     }
     if(gpu->sprite_display_enable){
         for(int i = 0; i < NUM_SPRITES; i++){
-            Sprite *sprite = gpu->sprites[i];
+            Sprite *sprite = &gpu->sprites[i];
             if(sprite->y <= gpu->line && (sprite->y + 8) > gpu->line){
-		//printf("rendering sprite %d x %d y %d gpu line %d\n", sprite->tile, sprite->x, sprite->y, gpu->line);
+	      /*printf("rendering sprite %d x %d y %d gpu line %d\n",
+		sprite->tile, sprite->x, sprite->y, gpu->line);*/
 		u8 *tilerow;
 		if(sprite->yflip) {
-		    tilerow = gpu->tiles[sprite->tile][7 - (gpu->line - sprite->y)];
+		    tilerow = gpu->tiles[sprite->tile]
+		      [7 - (gpu->line - sprite->y)];
 		} else {
 		    tilerow = gpu->tiles[sprite->tile][gpu->line - sprite->y];
 		}
@@ -253,24 +262,23 @@ static void swap_buffers(){
 void gpu_step(int op_time){
     gpu->clock += op_time;
     switch(gpu->mode){
-    case 0://Horizontal Blank
+    case 0: //Horizontal Blank lasts 4560 clocks including mode 2 and 3
         if(gpu->clock >= HORIZONTAL_BLANK1_TIME){
-            if(gpu->line == (HEIGHT - 1)){//vblank
+            if(gpu->line == HEIGHT - 1){//144 vblank start
                 gpu->mode = 1;
 		memory->interrupt_flags |= 1;
             }else{//Scanline start
                 gpu->mode = 2;
             }
-            gpu->line++;
 	    gpu->curscan += 640;
-	    gpu->clock = 0;
+	    gpu->clock -= HORIZONTAL_BLANK1_TIME;
         }
         break;
-    case 1: //Vertical Blank runs 10 times
-        if(gpu->clock >= HORIZONTAL_BLANK2_TIME){
-            gpu->clock = 0;
+    case 1: //Vertical Blank runs 10 times, 4560 clocks total
+        if(gpu->clock >= HORIZONTAL_BLANK2_TIME / 10){
+            gpu->clock -= HORIZONTAL_BLANK2_TIME / 10;
             gpu->line++;
-            if(gpu->line > (HEIGHT + 9)){
+            if(gpu->line == (HEIGHT + 10)){
                 gpu->line = 0;
 		gpu->curscan = 0;
                 gpu->mode = 2;
@@ -280,15 +288,16 @@ void gpu_step(int op_time){
         break;
     case 2: //Scanline accessing OAM
         if(gpu->clock >= SCAN_OAM_TIME){ //goto vram scanning
-            gpu->clock = 0;
+            gpu->clock -= SCAN_OAM_TIME;
             gpu->mode = 3;
         }
         break;
     case 3: //Scanline accessing VRam
         if(gpu->clock >= SCAN_VRAM_TIME){
-            gpu->clock = 0;
+            gpu->clock -= SCAN_VRAM_TIME;
             gpu->mode = 0;
             render_scan();
+	    gpu->line++;
         }
         break;
     }

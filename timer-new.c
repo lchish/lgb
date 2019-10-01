@@ -23,14 +23,14 @@ void timer_step() {
 }
 
 void timer_check() {
-    int threshold = 0;
+    unsigned int threshold = 0;
 
     switch(timer->tac & 0x03)
     {
     case 0: threshold = 1024; break; // 4KHZ
     case 1: threshold = 16; break; // 256KHZ
-    case 3: threshold = 64; break; // 64KHZ
-    case 2: threshold = 256; break; //16KHZ
+    case 2: threshold = 64; break; // 64KHZ
+    case 3: threshold = 256; break; //16KHZ
     }
     while(timer->_div >= threshold) {
 	timer->_div -= threshold;
@@ -38,7 +38,7 @@ void timer_check() {
     }
 }
 
-void timer_tick(int time) {
+void timer_tick(const unsigned int time) {
     timer->div = (timer->div + time) & 0xFFFF;
     timer->_div = (timer->_div + time) & 0xFFFF;
     // if bit 2 is set the timer is enabled
@@ -48,7 +48,6 @@ void timer_tick(int time) {
 }
 
 u8 timer_read_byte(u16 address) {
-    printf("read %X %X\n", address, timer->tima);
     switch(address)
     {
     case 0xFF04: return timer->div >> 8;
@@ -61,7 +60,6 @@ u8 timer_read_byte(u16 address) {
 }
 
 void timer_write_byte(u16 address, u8 value) {
-    printf("write %X %X\n", address, value);
     switch(address)
     {
     case 0xFF04: timer->div = 0; timer->_div = 0; break;

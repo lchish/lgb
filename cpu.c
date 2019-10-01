@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <json-c/json.h>
 #include "cpu.h"
 #include "cpu_timings.h"
 #include "types.h"
@@ -10,6 +11,12 @@
 
 Cpu *cpu;
 
+static unsigned int load_json(const json_object *med_obj,
+			      const unsigned int opcode, const int pos,
+			      const char *prefix);
+json_object *med_obj;
+
+
 static inline u8 read(u16 addr){
     u8 ret = get_mem(addr);
     cpu->cycle_counter += 4;
@@ -19,7 +26,6 @@ static inline u8 read(u16 addr){
 static inline u8 pc_read(){
     u8 ret = read(cpu->PC);
     cpu->PC = (cpu->PC + 1) & 0xFFFF;
-    cpu->cycle_counter += 4;
     return ret;
 }
 
@@ -59,7 +65,8 @@ static inline u16 u8_to_u16(const u8 high, const u8 low)
 //return
 static inline void ret(){
     pc_change(u8_to_u16(read(cpu->SP + 1), (read(cpu->SP))));
-    cpu->SP += 2;
+    cpu->SP = (cpu->SP + 2) & 0xFFFF;
+    memory->debug = 0;
 }
 static inline void absolute_jump(){
     pc_change(u8_to_u16(read(cpu->PC + 1),read(cpu->PC)));
@@ -250,13 +257,13 @@ static inline void comp_8(const u8 a,const u8 b)
     if(ret < 0) set_carry();
     if((a & 0xF) - (b & 0xF ) < 0) set_halfcarry();
 }
-
 static inline void call_nn()
 {
     unsigned npc = (cpu->PC + 2) & 0xFFFF;
     pc_change(u8_to_u16(read(cpu->PC + 1), read(cpu->PC)));
     push_stack((npc >> 8) & 0xFF, npc & 0xFF);
 }
+
 
 void cb_opcodes(const u8 opcode)
 {
@@ -290,7 +297,7 @@ void cb_opcodes(const u8 opcode)
     case 0x06://Rotate value pointed by cpu->Hcpu->L left with carry
         tmp_address = u8_to_u16(cpu->H, cpu->L);
         write(tmp_address,rot_left_carry_8(read(tmp_address)));
-        if(!read(tmp_address)) set_zero();
+        if(!get_mem(tmp_address)) set_zero();
         break;
     case 0x07://Rotate A left with carry
         cpu->A = rot_left_carry_8(cpu->A);
@@ -323,7 +330,7 @@ void cb_opcodes(const u8 opcode)
     case 0x0E://Rotate value pointed by cpu->Hcpu->L right with carry
         tmp_address = u8_to_u16(cpu->H,cpu->L);
         write(tmp_address,rot_right_carry_8(read(tmp_address)));
-        if(!read(tmp_address)) set_zero();
+        if(!get_mem(tmp_address)) set_zero();
         break;
     case 0x0F://Rotate cpu->A right with carry
         cpu->A = rot_right_carry_8(cpu->A);
@@ -357,17 +364,17 @@ void cb_opcodes(const u8 opcode)
     case 0x16://Rotate value pointed by cpu->Hcpu->L left
         tmp_address = u8_to_u16(cpu->H,cpu->L);
         write(tmp_address,rot_left_8(read(tmp_address)));
-        if(!read(tmp_address)) set_zero();
+        if(!get_mem(tmp_address)) set_zero();
         break;
-    case 0x17://Rotate cpu->A left
+    case 0x17://Rotate A left
         cpu->A = rot_left_8(cpu->A);
         if(!cpu->A) set_zero();
         break;
-    case 0x18://Rotate cpu->B right
+    case 0x18://Rotate B right
         cpu->B = rot_right_8(cpu->B);
         if(!cpu->B) set_zero();
         break;
-    case 0x19://Rotate cpu->C right
+    case 0x19://Rotate C right
         cpu->C = rot_right_8(cpu->C);
         if(!cpu->C) set_zero();
         break;
@@ -390,7 +397,7 @@ void cb_opcodes(const u8 opcode)
     case 0x1E://Rotate value pointed by cpu->Hcpu->L right
         tmp_address = u8_to_u16(cpu->H,cpu->L);
         write(tmp_address,rot_right_8(read(tmp_address)));
-        if(!read(tmp_address)) set_zero();
+        if(!get_mem(tmp_address)) set_zero();
         break;
     case 0x1F://Rotate cpu->A right
         cpu->A = rot_right_8(cpu->A);
@@ -448,10 +455,10 @@ void cb_opcodes(const u8 opcode)
     case 0x26://Shift value pointed to by cpu->Hcpu->L left into carry cpu->LScpu->B set to 0
         reset_flags();
         tmp_address = u8_to_u16(cpu->H,cpu->L);
-        if(read(tmp_address) & 0x80)
+        if(get_mem(tmp_address) & 0x80)
             set_carry();
         write(tmp_address, (read(tmp_address) << 1) & 0xFF);
-        if(!read(tmp_address))
+        if(!get_mem(tmp_address))
             set_zero();
         break;
     case 0x27://Shift n left into carry cpu->LScpu->B set to 0
@@ -513,11 +520,11 @@ void cb_opcodes(const u8 opcode)
     case 0x2E://Shift memory at cpu->Hcpu->L right into carry. MScpu->B doesn't change
         reset_flags();
         tmp_address = u8_to_u16(cpu->H,cpu->L);
-        if(read(tmp_address) & 1)
+        if(get_mem(tmp_address) & 1)
             set_carry();
-        write(tmp_address, (read(tmp_address) >> 1) |
+        set_mem(tmp_address, (read(tmp_address) >> 1) |
 		(read(tmp_address) & 0x80));
-        if(!read(tmp_address))
+        if(!get_mem(tmp_address))
             set_zero();
         break;
     case 0x2F://Shift cpu->A right into carry. MScpu->B doesn't change
@@ -561,9 +568,10 @@ void cb_opcodes(const u8 opcode)
         break;
     case 0x36://swap nibbles in memory at cpu->Hcpu->L
         reset_flags();
-        write(u8_to_u16(cpu->H,cpu->L), ((read(u8_to_u16(cpu->H,
-                                          cpu->L)) & 0xF0) >> 4 | (read(u8_to_u16(cpu->H,cpu->L)) & 0x0F) << 4) & 0xFF);
-        if(!read(u8_to_u16(cpu->H,cpu->L))) set_zero();
+        set_mem(u8_to_u16(cpu->H,cpu->L),
+	      ((read(u8_to_u16(cpu->H,
+			       cpu->L)) & 0xF0) >> 4 | (read(u8_to_u16(cpu->H,cpu->L)) & 0x0F) << 4) & 0xFF);
+        if(!get_mem(u8_to_u16(cpu->H,cpu->L))) set_zero();
         break;
     case 0x37://swap nibbles in cpu->A
         reset_flags();
@@ -618,13 +626,13 @@ void cb_opcodes(const u8 opcode)
         if(!cpu->L)
             set_zero();
         break;
-    case 0x3E://shift memory at cpu->Hcpu->L right
+    case 0x3E://shift memory at HL right
         reset_flags();
         tmp_address = u8_to_u16(cpu->H,cpu->L);
-        if(read(tmp_address) & 1)
+        if(get_mem(tmp_address) & 1)
             set_carry();
         write(tmp_address, (read(tmp_address) >> 1) & 0xFF);
-        if(!read(tmp_address))
+        if(!get_mem(tmp_address))
             set_zero();
         break;
     case 0x3F://shift cpu->A right
@@ -677,6 +685,7 @@ void cb_opcodes(const u8 opcode)
         unset_subtract();
         if(!(read(u8_to_u16(cpu->H,cpu->L)) & 0x01)) set_zero();
         else unset_zero();
+	cpu->cycle_counter += 4;
         break;
     case 0x47://Test bit 0 of cpu->A
         set_halfcarry();
@@ -725,6 +734,7 @@ void cb_opcodes(const u8 opcode)
         unset_subtract();
         if(!(read(u8_to_u16(cpu->H,cpu->L)) & 0x02))set_zero();
         else unset_zero();
+	cpu->cycle_counter += 4;
         break;
     case 0x4F://Test bit 1 of cpu->A
         set_halfcarry();
@@ -774,6 +784,7 @@ void cb_opcodes(const u8 opcode)
         unset_subtract();
         if(!(read(u8_to_u16(cpu->H,cpu->L)) & 0x04))set_zero();
         else unset_zero();
+	cpu->cycle_counter += 4;
         break;
     case 0x57://Test bit 2 of cpu->A
         set_halfcarry();
@@ -822,6 +833,7 @@ void cb_opcodes(const u8 opcode)
         unset_subtract();
         if(!(read(u8_to_u16(cpu->H,cpu->L)) & 0x08))set_zero();
         else unset_zero();
+	cpu->cycle_counter += 4;
         break;
     case 0x5F://Test bit 3 of cpu->A
         set_halfcarry();
@@ -871,6 +883,7 @@ void cb_opcodes(const u8 opcode)
         unset_subtract();
         if(!(read(u8_to_u16(cpu->H,cpu->L)) & 0x10))set_zero();
         else unset_zero();
+	cpu->cycle_counter += 4;
         break;
     case 0x67://Test bit 4 of cpu->A
         set_halfcarry();
@@ -919,6 +932,7 @@ void cb_opcodes(const u8 opcode)
         unset_subtract();
         if(!(read(u8_to_u16(cpu->H,cpu->L)) & 0x20))set_zero();
         else unset_zero();
+	cpu->cycle_counter += 4;
         break;
     case 0x6F://Test bit 5 of cpu->A
         set_halfcarry();
@@ -968,6 +982,7 @@ void cb_opcodes(const u8 opcode)
         unset_subtract();
         if(!(read(u8_to_u16(cpu->H,cpu->L)) & 0x40))set_zero();
         else unset_zero();
+	cpu->cycle_counter += 4;
         break;
     case 0x77://Test bit 6 of A
         set_halfcarry();
@@ -1016,6 +1031,7 @@ void cb_opcodes(const u8 opcode)
         unset_subtract();
         if(!(read(u8_to_u16(cpu->H,cpu->L)) & 0x80))set_zero();
         else unset_zero();
+	cpu->cycle_counter += 4;
         break;
     case 0x7F://Test bit 7 of cpu->A
         set_halfcarry();
@@ -1024,46 +1040,46 @@ void cb_opcodes(const u8 opcode)
         else unset_zero();
         break;
 
-    case 0x80://Clear bit 0 of cpu->B
+    case 0x80://Clear bit 0 of B
         cpu->B &= 0xFE;
         break;
-    case 0x81://Clear bit 0 of cpu->C
+    case 0x81://Clear bit 0 of C
         cpu->C &= 0xFE;
         break;
-    case 0x82://Clear bit 0 of cpu->D
+    case 0x82://Clear bit 0 of D
         cpu->D &= 0xFE;
         break;
     case 0x83://Clear bit 0 of E
         cpu->E &= 0xFE;
         break;
-    case 0x84://Clear bit 0 of cpu->H
+    case 0x84://Clear bit 0 of H
         cpu->H &= 0xFE;
         break;
-    case 0x85://Clear bit 0 of cpu->L
+    case 0x85://Clear bit 0 of L
         cpu->L &= 0xFE;
         break;
-    case 0x86://Clear bit 0 of address at cpu->Hcpu->L
+    case 0x86://Clear bit 0 of address at HL
         write(u8_to_u16(cpu->H,cpu->L),read(u8_to_u16(cpu->H,cpu->L)) & 0xFE);
         break;
-    case 0x87://Clear bit 0 of cpu->A
+    case 0x87://Clear bit 0 of A
         cpu->A &= 0xFE;
         break;
-    case 0x88://Clear bit 1 of cpu->B
+    case 0x88://Clear bit 1 of B
         cpu->B &= 0xFD;
         break;
-    case 0x89://Clear bit 1 of cpu->C
+    case 0x89://Clear bit 1 of C
         cpu->C &= 0xFD;
         break;
-    case 0x8A://Clear bit 1 of cpu->D
+    case 0x8A://Clear bit 1 of D
         cpu->D &= 0xFD;
         break;
     case 0x8B://Clear bit 1 of E
         cpu->E &= 0xFD;
         break;
-    case 0x8C://Clear bit 1 of cpu->H
+    case 0x8C://Clear bit 1 of H
         cpu->H &= 0xFD;
         break;
-    case 0x8D://Clear bit 1 of cpu->L
+    case 0x8D://Clear bit 1 of L
         cpu->L &= 0xFD;
         break;
     case 0x8E://Clear bit 1 of address at cpu->Hcpu->L
@@ -1189,7 +1205,7 @@ void cb_opcodes(const u8 opcode)
     case 0xB5://Clear bit 6 of cpu->L
         cpu->L &= 0xBF;
         break;
-    case 0xB6://Clear bit 6 of address at cpu->Hcpu->L
+    case 0xB6://Clear bit 6 of address at HL
         write(u8_to_u16(cpu->H,cpu->L),read(u8_to_u16(cpu->H,cpu->L)) & 0xBF);
         break;
     case 0xB7://Clear bit 6 of cpu->A
@@ -1424,37 +1440,40 @@ void cb_opcodes(const u8 opcode)
 
 void cpu_writeout_state(u8 opcode)
 {
-    //printf("%X %X %X %X %X %X %X %X \n",opcode, cpu->A, cpu->B, cpu->C, cpu->D, cpu->E, cpu->H, cpu->L);
+    printf("%X %X %X %X %X %X %X %X %X %X\n",opcode, cpu->A, cpu->B, cpu->C, cpu->D, cpu->E, cpu->H, cpu->L, cpu->SP, cpu->PC);
 }
 
 void cpu_step(u8 opcode)
 {
     u16 tmp;
     int signed_tmp;
-    cpu_writeout_state(opcode);
+    if(memory->debug)
+	printf("op: %X\n", opcode);
+    //cpu_writeout_state(opcode);
     switch(opcode) {
     case 0x00://no-op
         break;
-    case 0x01://load 16bit immediate into cpu->Bcpu->C
+    case 0x01://load 16bit immediate into BC
         cpu->C=read(cpu->PC);
         cpu->B=read(cpu->PC + 1);
 	cpu->PC += 2;
         break;
-    case 0x02://Save cpu->A to address pointed by cpu->Bcpu->C
+    case 0x02://Save A to address pointed by BC
         write(u8_to_u16(cpu->B,cpu->C),cpu->A);
         break;
-    case 0x03: // INcpu->C cpu->Bcpu->C
-        tmp = inc_16(u8_to_u16(cpu->B,cpu->C));
+    case 0x03: // INC BC
+	tmp = inc_16(u8_to_u16(cpu->B,cpu->C));
         cpu->B = (tmp >> 8) & 0xFF;
         cpu->C = tmp & 0xFF;
+	cpu->cycle_counter += 4;
         break;
-    case 0x04://INcpu->C cpu->B
+    case 0x04://INC B
         cpu->B = inc_8(cpu->B);
         break;
-    case 0x05://Dec cpu->B
+    case 0x05://DEC B
         cpu->B = dec_8(cpu->B);
         break;
-    case 0x06://Load immediate into cpu->B
+    case 0x06://Load immediate into B
         cpu->B = read(cpu->PC);
 	cpu->PC++;
         break;
@@ -1469,26 +1488,28 @@ void cpu_step(u8 opcode)
         cpu->PC += 2;
         break;
     }
-    case 0x09://Add cpu->Bcpu->C to cpu->Hcpu->L
+    case 0x09://Add BC to HL
         tmp = add_16(u8_to_u16(cpu->B,cpu->C),u8_to_u16(cpu->H,cpu->L));
         cpu->H = (tmp >> 8) & 0xFF;
         cpu->L = tmp & 0xFF;
+	cpu->cycle_counter += 4;
         break;
-    case 0x0A://Load cpu->A from cpu->Addres pointed to by cpu->Bcpu->C
+    case 0x0A://Load A from addres pointed to by BC
         cpu->A = read(u8_to_u16(cpu->B,cpu->C));
         break;
-    case 0x0B://Dec cpu->Bcpu->C
+    case 0x0B://Dec BC
         tmp = dec_16(u8_to_u16(cpu->B,cpu->C));
         cpu->B = (tmp >> 8) & 0xFF;
         cpu->C = tmp & 0xFF;
+	cpu->cycle_counter += 4;
         break;
-    case 0x0C://INcpu->C cpu->C
+    case 0x0C://INC C
         cpu->C = inc_8(cpu->C);
         break;
-    case 0x0D://Dec cpu->C
+    case 0x0D://Dec C
         cpu->C = dec_8(cpu->C);
         break;
-    case 0x0E://load 8-bit immediate into cpu->C
+    case 0x0E://load 8-bit immediate into C
         cpu->C = read(cpu->PC);
 	cpu->PC++;
         break;
@@ -1505,44 +1526,47 @@ void cpu_step(u8 opcode)
         cpu->D = read(cpu->PC + 1);
 	cpu->PC += 2;
         break;
-    case 0x12://Save cpu->A to address pointed by cpu->DE
+    case 0x12://Save A to address pointed by DE
         write(u8_to_u16(cpu->D, cpu->E),cpu->A);
         break;
     case 0x13: //INC DE
         tmp = inc_16(u8_to_u16(cpu->D,cpu->E));
         cpu->D = (tmp >> 8) & 0xFF;
         cpu->E = tmp & 0xFF;
+	cpu->cycle_counter += 4;
         break;
-    case 0x14://INcpu->C cpu->D
+    case 0x14://INC D
         cpu->D = inc_8(cpu->D);
         break;
-    case 0x15://Dec cpu->D
+    case 0x15://Dec D
         cpu->D = dec_8(cpu->D);
         break;
-    case 0x16://Load immediate into cpu->D
+    case 0x16://Load immediate into D
         cpu->D = read(cpu->PC);
 	cpu->PC++;
         break;
-    case 0x17://rotate accumulator left
+    case 0x17://Rotate accumulator left
         cpu->A = rot_left_8(cpu->A);
         break;
     case 0x18://Relative jump by signed immediate
 	rjsi();
         break;
-    case 0x19://Add cpu->DE to cpu->Hcpu->L
+    case 0x19://Add DE to HL
         tmp = add_16(u8_to_u16(cpu->D, cpu->E),u8_to_u16(cpu->H,cpu->L));
         cpu->H = (tmp >> 8) & 0xFF;
         cpu->L = tmp & 0xFF;
+	cpu->cycle_counter += 4;
         break;
-    case 0x1A://Load cpu->A from cpu->Addres pointed to by cpu->DE
+    case 0x1A://Load A from addres pointed to by DE
         cpu->A = read(u8_to_u16(cpu->D, cpu->E));
         break;
-    case 0x1B://Dec cpu->DE
+    case 0x1B://Dec DE
         tmp = dec_16(u8_to_u16(cpu->D, cpu->E));
         cpu->D = (tmp >> 8) & 0xFF;
         cpu->E = tmp & 0xFF;
+	cpu->cycle_counter += 4;
         break;
-    case 0x1C://INcpu->C E
+    case 0x1C://INC E
         cpu->E = inc_8(cpu->E);
         break;
     case 0x1D://Dec E
@@ -1557,6 +1581,7 @@ void cpu_step(u8 opcode)
 
     case 0x20://Relative jump by signed immediate if last result was not zero
         if(!(cpu->F & 0x80)) {
+	    cpu->jump_taken = 1;
 	    rjsi();
         } else {
 	    pc_change((cpu->PC + 1) & 0xFFFF);
@@ -1567,16 +1592,17 @@ void cpu_step(u8 opcode)
         cpu->H = read(cpu->PC + 1);
 	cpu->PC += 2;
         break;
-    case 0x22://Save cpu->A to address pointed by cpu->Hcpu->L and increment cpu->Hcpu->L
+    case 0x22://Save A to address pointed by cpu->Hcpu->L and increment HL
         write(u8_to_u16(cpu->H,cpu->L),cpu->A);
         tmp = inc_16(u8_to_u16(cpu->H,cpu->L));
         cpu->H = (tmp >> 8) & 0xFF;
         cpu->L = tmp & 0xFF;
         break;
-    case 0x23: //INcpu->C cpu->Hcpu->L
+    case 0x23: //INC HL
         tmp = inc_16(u8_to_u16(cpu->H,cpu->L));
         cpu->H = ((tmp & 0xFF00) >> 8);
         cpu->L = tmp & 0xFF;
+	cpu->cycle_counter += 4;
         break;
     case 0x24://INC H
         cpu->H = inc_8(cpu->H);
@@ -1616,35 +1642,39 @@ void cpu_step(u8 opcode)
         signed_tmp = (signed char)read(cpu->PC);
         if(cpu->F & 0x80) {
             cpu->PC += signed_tmp;
+	    cpu->jump_taken = 1;
+	    cpu->cycle_counter += 4;
         }
         cpu->PC++;
         break;
-    case 0x29://Add cpu->Hcpu->L to cpu->Hcpu->L
+    case 0x29://Add HL to HL
         tmp = add_16(u8_to_u16(cpu->H, cpu->L), u8_to_u16(cpu->H, cpu->L));
         cpu->H = (tmp >> 8) & 0xFF;
         cpu->L = tmp & 0xFF;
+	cpu->cycle_counter += 4;
         break;
-    case 0x2A://Load cpu->A from cpu->Address pointed to by cpu->Hcpu->L and INcpu->C cpu->Hcpu->L
+    case 0x2A://Load A from address pointed to by HL and INC HL
         cpu->A = read(u8_to_u16(cpu->H, cpu->L));
         tmp = inc_16(u8_to_u16(cpu->H, cpu->L));
         cpu->H = (tmp >> 8);
         cpu->L = tmp & 0xFF;
         break;
-    case 0x2B://Dec cpu->Hcpu->L
+    case 0x2B://DEC HL
         tmp = dec_16(u8_to_u16(cpu->H, cpu->L));
         cpu->H = (tmp >> 8) & 0xFF;
         cpu->L = tmp & 0xFF;
+	cpu->cycle_counter += 4;
         break;
-    case 0x2C://INcpu->C cpu->L
+    case 0x2C://INC L
         cpu->L = inc_8(cpu->L);
         break;
-    case 0x2D://Dec cpu->L
+    case 0x2D://DEC L
         cpu->L = dec_8(cpu->L);
         break;
-    case 0x2E://load 8-bit immediate into cpu->L
+    case 0x2E://load 8-bit immediate into L
         cpu->L = pc_read();
         break;
-    case 0x2F://NOT cpu->A/cpu->Complement of cpu->A
+    case 0x2F://NOT A/complement of A
         cpu->A = ~cpu->A;
         set_subtract();
         set_halfcarry();
@@ -1653,6 +1683,7 @@ void cpu_step(u8 opcode)
     case 0x30://Relative jump by signed immediate if last result was not carry
         if(!(cpu->F & 0x10)) {
 	    rjsi();
+	    cpu->jump_taken = 1;
         } else {
 	    pc_change((cpu->PC + 1) & 0xFFFF);
 	}
@@ -1661,7 +1692,7 @@ void cpu_step(u8 opcode)
         cpu->SP = (read(cpu->PC + 1) << 8) | read(cpu->PC);
         cpu->PC += 2;
         break;
-    case 0x32:{//Save cpu->A to address pointed by cpu->Hcpu->L and dec cpu->Hcpu->L
+    case 0x32:{//Save A to address pointed by HL and dec HL
         tmp = dec_16(u8_to_u16(cpu->H, cpu->L));
         write(u8_to_u16(cpu->H, cpu->L), cpu->A);
         cpu->H = (tmp >> 8) & 0xFF;
@@ -1672,13 +1703,13 @@ void cpu_step(u8 opcode)
         cpu->SP = inc_16(cpu->SP);
 	cpu->cycle_counter += 4;
         break;
-    case 0x34://INC (cpu->Hcpu->L)
+    case 0x34://INC (HL)
         write(u8_to_u16(cpu->H, cpu->L), inc_8(read(u8_to_u16(cpu->H, cpu->L))));
         break;
-    case 0x35: //DEC (cpu->Hcpu->L)
+    case 0x35: //DEC (HL)
         write(u8_to_u16(cpu->H,cpu->L), dec_8(read(u8_to_u16(cpu->H,cpu->L))));
 	break;
-    case 0x36://Load immediate into address pointed by cpu->Hcpu->L
+    case 0x36://Load immediate into address pointed by HL
         write(u8_to_u16(cpu->H,cpu->L), pc_read());
         break;
     case 0x37://set carry flag
@@ -1689,6 +1720,7 @@ void cpu_step(u8 opcode)
     case 0x38://Relative jump by signed immediate if last result caused a carry
         if(cpu->F & 0x10) {
 	    rjsi();
+	    cpu->jump_taken = 1;
         } else {
 	    pc_change((cpu->PC + 1) & 0xFFFF);
 	}
@@ -1707,7 +1739,6 @@ void cpu_step(u8 opcode)
         u16 value = dec_16(u8_to_u16(cpu->H, cpu->L));
         cpu->H = (value >> 8) & 0xFF;
         cpu->L = value & 0xFF;
-	cpu->cycle_counter += 4;
         break;
     }
     case 0x3B://Dec SP
@@ -1717,12 +1748,11 @@ void cpu_step(u8 opcode)
     case 0x3C://Inc A
         cpu->A = inc_8(cpu->A);
         break;
-    case 0x3D://Dec cpu->A
+    case 0x3D://Dec A
         cpu->A = dec_8(cpu->A);
         break;
-    case 0x3E://load 8-bit immediate into cpu->A
-        cpu->A = read(cpu->PC);
-	cpu->PC++;
+    case 0x3E://load 8-bit immediate into A
+        cpu->A = pc_read();
         break;
     case 0x3F://Complement carry flag
         unset_subtract();
@@ -1733,163 +1763,163 @@ void cpu_step(u8 opcode)
             set_carry();
         break;
 
-    case 0x40://Copy cpu->B to cpu->B
+    case 0x40://Copy B to B
         break;
-    case 0x41://Copy cpu->C to cpu->B
+    case 0x41://Copy C to B
         cpu->B = cpu->C;
         break;
-    case 0x42://Copy cpu->D to cpu->B
+    case 0x42://Copy D to B
         cpu->B = cpu->D;
         break;
-    case 0x43://Copy E to cpu->B
+    case 0x43://Copy E to B
         cpu->B = cpu->E;
         break;
-    case 0x44://Copy cpu->H to cpu->B
+    case 0x44://Copy H to B
         cpu->B = cpu->H;
         break;
-    case 0x45://Copy cpu->L to cpu->B
+    case 0x45://Copy L to B
         cpu->B = cpu->L;
         break;
-    case 0x46://Copy value pointed by cpu->Hcpu->L to cpu->B
+    case 0x46://Copy value pointed by HL to B
         cpu->B = read(u8_to_u16(cpu->H, cpu->L));
         break;
-    case 0x47://Copy cpu->A to cpu->B
+    case 0x47://Copy A to B
         cpu->B = cpu->A;
         break;
-    case 0x48://Copy cpu->B to cpu->C
+    case 0x48://Copy B to C
         cpu->C = cpu->B;
         break;
-    case 0x49://Copy cpu->C to cpu->C
+    case 0x49://Copy C to C
         break;
-    case 0x4A://Copy cpu->D to cpu->C
+    case 0x4A://Copy D to C
         cpu->C = cpu->D;
         break;
-    case 0x4B://Copy E to cpu->C
+    case 0x4B://Copy E to C
         cpu->C = cpu->E;
         break;
-    case 0x4C://Copy cpu->H to cpu->C
+    case 0x4C://Copy H to C
         cpu->C = cpu->H;
         break;
-    case 0x4D://Copy cpu->L to cpu->C
+    case 0x4D://Copy L to C
         cpu->C = cpu->L;
         break;
-    case 0x4E://Copy value pointed by cpu->Hcpu->L to cpu->C
+    case 0x4E://Copy value pointed by HL to C
         cpu->C = read(u8_to_u16(cpu->H,cpu->L));
         break;
-    case 0x4F://Copy cpu->A to cpu->C
+    case 0x4F://Copy A to C
         cpu->C = cpu->A;
         break;
 
-    case 0x50://Copy cpu->B to cpu->D
+    case 0x50://Copy B to D
         cpu->D = cpu->B;
         break;
-    case 0x51://Copy cpu->C to cpu->D
+    case 0x51://Copy C to D
         cpu->D = cpu->C;
         break;
-    case 0x52://Copy cpu->D to cpu->D
+    case 0x52://Copy D to D
         break;
-    case 0x53://Copy E to cpu->D
+    case 0x53://Copy E to D
         cpu->D = cpu->E;
         break;
-    case 0x54://Copy cpu->H to cpu->D
+    case 0x54://Copy H to D
         cpu->D = cpu->H;
         break;
-    case 0x55://Copy cpu->L to cpu->D
+    case 0x55://Copy L to D
         cpu->D = cpu->L;
         break;
-    case 0x56://Copy value pointed by cpu->Hcpu->L to cpu->D
+    case 0x56://Copy value pointed by HL to D
         cpu->D = read(u8_to_u16(cpu->H,cpu->L));
         break;
-    case 0x57://Copy cpu->A to cpu->D
+    case 0x57://Copy A to D
         cpu->D = cpu->A;
         break;
-    case 0x58://Copy cpu->B to E
+    case 0x58://Copy B to E
         cpu->E = cpu->B;
         break;
-    case 0x59://Copy cpu->C to E
+    case 0x59://Copy C to E
         cpu->E = cpu->C;
         break;
-    case 0x5A://Copy cpu->D to E
+    case 0x5A://Copy D to E
         cpu->E = cpu->D;
         break;
     case 0x5B://Copy E to E
         break;
-    case 0x5C://Copy cpu->H to E
+    case 0x5C://Copy H to E
         cpu->E = cpu->H;
         break;
-    case 0x5D://Copy cpu->L to E
+    case 0x5D://Copy L to E
         cpu->E = cpu->L;
         break;
-    case 0x5E://Copy value pointed by cpu->Hcpu->L to E
+    case 0x5E://Copy value pointed by HL to E
         cpu->E = read(u8_to_u16(cpu->H,cpu->L));
         break;
-    case 0x5F://Copy cpu->A to E
+    case 0x5F://Copy A to E
         cpu->E = cpu->A;
         break;
 
-    case 0x60://Copy cpu->B to cpu->H
+    case 0x60://Copy B to H
         cpu->H = cpu->B;
         break;
-    case 0x61://Copy cpu->C to cpu->H
+    case 0x61://Copy C to H
         cpu->H = cpu->C;
         break;
-    case 0x62://Copy cpu->D to cpu->H
+    case 0x62://Copy D to H
         cpu->H = cpu->D;
         break;
-    case 0x63://Copy E to cpu->H
+    case 0x63://Copy E to H
         cpu->H = cpu->E;
         break;
-    case 0x64://Copy cpu->H to cpu->H
+    case 0x64://Copy H to H
         break;
-    case 0x65://Copy cpu->L to cpu->H
+    case 0x65://Copy L to H
         cpu->H = cpu->L;
         break;
-    case 0x66://Copy value pointed by cpu->Hcpu->L to cpu->H
+    case 0x66://Copy value pointed by HL to H
         cpu->H = read(u8_to_u16(cpu->H,cpu->L));
         break;
-    case 0x67://Copy cpu->A to cpu->H
+    case 0x67://Copy A to H
         cpu->H = cpu->A;
         break;
-    case 0x68://Copy cpu->B to cpu->L
+    case 0x68://Copy B to L
         cpu->L = cpu->B;
         break;
-    case 0x69://Copy cpu->C to cpu->L
+    case 0x69://Copy C to L
         cpu->L = cpu->C;
         break;
-    case 0x6A://Copy cpu->D to cpu->L
+    case 0x6A://Copy D to L
         cpu->L = cpu->D;
         break;
-    case 0x6B://Copy E to cpu->L
+    case 0x6B://Copy E to L
         cpu->L = cpu->E;
         break;
-    case 0x6C://Copy cpu->H to cpu->L
+    case 0x6C://Copy H to L
         cpu->L = cpu->H;
         break;
-    case 0x6D://Copy cpu->L to cpu->L
+    case 0x6D://Copy L to L
         break;
-    case 0x6E://Copy value pointed by cpu->Hcpu->L to cpu->L
+    case 0x6E://Copy value pointed by HL to L
         cpu->L = read(u8_to_u16(cpu->H,cpu->L));
         break;
-    case 0x6F://Copy cpu->A to cpu->L
+    case 0x6F://Copy A to cpu->L
         cpu->L = cpu->A;
         break;
 
-    case 0x70://copy cpu->B to cpu->Address pointed to by cpu->Hcpu->L
+    case 0x70://copy B to address pointed to by HL
         write(u8_to_u16(cpu->H,cpu->L),cpu->B);
         break;
-    case 0x71://copy cpu->C to cpu->Address pointed to by cpu->Hcpu->L
+    case 0x71://copy C to address pointed to by HL
         write(u8_to_u16(cpu->H,cpu->L),cpu->C);
         break;
-    case 0x72://copy cpu->D to cpu->Address pointed to by cpu->Hcpu->L
+    case 0x72://copy D to address pointed to by HL
         write(u8_to_u16(cpu->H,cpu->L),cpu->D);
         break;
-    case 0x73://copy E to cpu->Address pointed to by cpu->Hcpu->L
+    case 0x73://copy E to address pointed to by HL
         write(u8_to_u16(cpu->H,cpu->L), cpu->E);
         break;
-    case 0x74://copy cpu->H to cpu->Address pointed to by cpu->Hcpu->L
+    case 0x74://copy H to address pointed to by HL
         write(u8_to_u16(cpu->H,cpu->L),cpu->H);
         break;
-    case 0x75://copy cpu->L to cpu->Address pointed to by cpu->Hcpu->L
+    case 0x75://copy L to address pointed to by HL
         write(u8_to_u16(cpu->H,cpu->L),cpu->L);
         break;
     case 0x76://HALT has bugz on the gb
@@ -1908,7 +1938,7 @@ void cpu_step(u8 opcode)
 	// Turn interrupts on if they aren't already
         cpu->cpu_halt = 1;
         break;
-    case 0x77://copy cpu->A to cpu->Address pointed to by cpu->Hcpu->L
+    case 0x77://copy A to Address pointed to by HL
         write(u8_to_u16(cpu->H, cpu->L), cpu->A);
         break;
     case 0x78:// copy cpu->B to cpu->A
@@ -1923,16 +1953,16 @@ void cpu_step(u8 opcode)
     case 0x7B:// copy E to cpu->A
         cpu->A = cpu->E;
         break;
-    case 0x7C:// copy cpu->H to cpu->A
-        cpu->A=cpu->H;
+    case 0x7C:// copy H to A
+        cpu->A = cpu->H;
         break;
-    case 0x7D:// copy cpu->L to cpu->A
-        cpu->A=cpu->L;
+    case 0x7D:// copy L to A
+        cpu->A = cpu->L;
         break;
-    case 0x7E://Copy value pointed by cpu->Hcpu->L to cpu->A
+    case 0x7E://Copy value pointed by HL to A
         cpu->A = read(u8_to_u16(cpu->H,cpu->L));
         break;
-    case 0x7F:// copy cpu->A to cpu->A
+    case 0x7F:// copy A to A
         break;
 
     case 0x80://Acpu->Dcpu->D cpu->B to cpu->A
@@ -1953,7 +1983,7 @@ void cpu_step(u8 opcode)
     case 0x85://Acpu->Dcpu->D cpu->L to cpu->A
         cpu->A = add_8(cpu->L,cpu->A);
         break;
-    case 0x86://Acpu->Dcpu->D value pointed by cpu->Hcpu->L to cpu->A
+    case 0x86://ADD value pointed by HL to A
         cpu->A = add_8(read(u8_to_u16(cpu->H,cpu->L)),cpu->A);
         break;
     case 0x87://Acpu->Dcpu->D cpu->A to cpu->A
@@ -1977,173 +2007,177 @@ void cpu_step(u8 opcode)
     case 0x8D://Add cpu->L and carry flag to cpu->A
         cpu->A = add_8c(cpu->A,cpu->L);
         break;
-    case 0x8E://Add value pointed by cpu->Hcpu->L and carry flag to cpu->A
+    case 0x8E://Add value pointed by HL and carry flag to A
         cpu->A = add_8c(cpu->A,read(u8_to_u16(cpu->H,cpu->L)));
         break;
-    case 0x8F://Add cpu->A and carry flag to cpu->A
+    case 0x8F://Add A and carry flag to A
         cpu->A = add_8c(cpu->A,cpu->A);
         break;
 
-    case 0x90://SUcpu->B cpu->B from cpu->A
+    case 0x90://SUB B from A
         cpu->A = sub_8(cpu->A,cpu->B);
         break;
-    case 0x91://SUcpu->B cpu->C from cpu->A
+    case 0x91://SUB cpu->C from cpu->A
         cpu->A = sub_8(cpu->A,cpu->C);
         break;
-    case 0x92://SUcpu->B cpu->D from cpu->A
+    case 0x92://SUB cpu->D from cpu->A
         cpu->A = sub_8(cpu->A,cpu->D);
         break;
-    case 0x93://SUcpu->B E from cpu->A
+    case 0x93://SUB E from cpu->A
         cpu->A = sub_8(cpu->A, cpu->E);
         break;
-    case 0x94://SUcpu->B cpu->H from cpu->A
+    case 0x94://SUB cpu->H from cpu->A
         cpu->A = sub_8(cpu->A,cpu->H);
         break;
-    case 0x95://SUcpu->B cpu->L from cpu->A
+    case 0x95://SUB cpu->L from cpu->A
         cpu->A = sub_8(cpu->A,cpu->L);
         break;
-    case 0x96://SUcpu->B value pointed by cpu->Hcpu->L from cpu->A
+    case 0x96://SUB value pointed by cpu->Hcpu->L from cpu->A
         cpu->A = sub_8(cpu->A,read(u8_to_u16(cpu->H,cpu->L)));
         break;
-    case 0x97://SUcpu->B cpu->A from cpu->A
+    case 0x97://SUB cpu->A from cpu->A
         cpu->A = sub_8(cpu->A,cpu->A);
         break;
-    case 0x98://SUcpu->B cpu->B and carry flag from cpu->A
+    case 0x98://SUB cpu->B and carry flag from cpu->A
         cpu->A = sub_8c(cpu->A,cpu->B);
         break;
-    case 0x99://SUcpu->B cpu->C and carry flag from cpu->A
+    case 0x99://SUB cpu->C and carry flag from cpu->A
         cpu->A = sub_8c(cpu->A,cpu->C);
         break;
-    case 0x9A://SUcpu->B cpu->D and carry flag from cpu->A
+    case 0x9A://SUB cpu->D and carry flag from cpu->A
         cpu->A = sub_8c(cpu->A,cpu->D);
         break;
-    case 0x9B://SUcpu->B E and carry flag from cpu->A
+    case 0x9B://SUB E and carry flag from cpu->A
         cpu->A = sub_8c(cpu->A, cpu->E);
         break;
-    case 0x9C://SUcpu->B cpu->H and carry flag from cpu->A
+    case 0x9C://SUB cpu->H and carry flag from cpu->A
         cpu->A = sub_8c(cpu->A,cpu->H);
         break;
-    case 0x9D://SUcpu->B cpu->L and carry flag from cpu->A
+    case 0x9D://SUB cpu->L and carry flag from cpu->A
         cpu->A = sub_8c(cpu->A,cpu->L);
         break;
-    case 0x9E://SUcpu->B value pointed by cpu->Hcpu->L and carry flag from cpu->A
+    case 0x9E://SUB value pointed by cpu->Hcpu->L and carry flag from cpu->A
         cpu->A = sub_8c(cpu->A,read(u8_to_u16(cpu->H,cpu->L)));
         break;
-    case 0x9F://SUcpu->B cpu->A and carry flag from cpu->A
+    case 0x9F://SUB cpu->A and carry flag from cpu->A
         cpu->A = sub_8c(cpu->A,cpu->A);
         break;
-    case 0xA0://ANcpu->D cpu->A with cpu->B
+    case 0xA0://AND cpu->A with cpu->B
         cpu->A = and_8(cpu->A,cpu->B);
         break;
-    case 0xA1://ANcpu->D cpu->A with cpu->C
+    case 0xA1://AND cpu->A with cpu->C
         cpu->A = and_8(cpu->A,cpu->C);
         break;
-    case 0xA2://ANcpu->D cpu->A with cpu->D
+    case 0xA2://AND cpu->A with cpu->D
         cpu->A = and_8(cpu->A,cpu->D);
         break;
-    case 0xA3://ANcpu->D cpu->A with E
+    case 0xA3://AND A with E
         cpu->A = and_8(cpu->A, cpu->E);
         break;
-    case 0xA4://ANcpu->D cpu->A with cpu->H
+    case 0xA4://AND A with H
         cpu->A = and_8(cpu->A,cpu->H);
         break;
-    case 0xA5://ANcpu->D cpu->A with cpu->L
+    case 0xA5://AND A with L
         cpu->A = and_8(cpu->A,cpu->L);
         break;
-    case 0xA6://ANcpu->D cpu->A with value pointed to by cpu->Hcpu->L
+    case 0xA6://AND A with value pointed to by HL
         cpu->A = and_8(cpu->A,read(u8_to_u16(cpu->H,cpu->L)));
         break;
-    case 0xA7://And cpu->A with cpu->A
+    case 0xA7://And A with A
         cpu->A = and_8(cpu->A,cpu->A);
         break;
-    case 0xA8://XOR cpu->B with cpu->A
+    case 0xA8://XOR B with A
         cpu->A = xor_8(cpu->A,cpu->B);
         break;
-    case 0xA9://XOR cpu->C with cpu->A
+    case 0xA9://XOR C with A
         cpu->A = xor_8(cpu->A,cpu->C);
         break;
-    case 0xAA://XOR cpu->D with cpu->A
+    case 0xAA://XOR D with A
         cpu->A = xor_8(cpu->A,cpu->D);
         break;
-    case 0xAB://XOR E with cpu->A
+    case 0xAB://XOR E with A
         cpu->A = xor_8(cpu->A, cpu->E);
         break;
-    case 0xAC://XOR cpu->H with cpu->A
+    case 0xAC://XOR H with A
         cpu->A = xor_8(cpu->A,cpu->H);
         break;
-    case 0xAD://XOR cpu->L with cpu->A
+    case 0xAD://XOR L with A
         cpu->A = xor_8(cpu->A,cpu->L);
         break;
-    case 0xAE://XOR cpu->A with value pointed to by cpu->Hcpu->L
+    case 0xAE://XOR A with value pointed to by HL
         cpu->A = xor_8(cpu->A,read(u8_to_u16(cpu->H,cpu->L)));
         break;
-    case 0xAF://XOR cpu->A with cpu->A
+    case 0xAF://XOR A with A
         cpu->A = xor_8(cpu->A,cpu->A);
         break;
 
-    case 0xB0://OR cpu->A with cpu->B
+    case 0xB0://OR A with B
         cpu->A = or_8(cpu->A,cpu->B);
         break;
-    case 0xB1://OR cpu->A with cpu->C
+    case 0xB1://OR A with C
         cpu->A = or_8(cpu->A,cpu->C);
         break;
-    case 0xB2://OR cpu->A with cpu->D
+    case 0xB2://OR A with D
         cpu->A = or_8(cpu->A,cpu->D);
         break;
-    case 0xB3://OR cpu->A with E
+    case 0xB3://OR A with E
         cpu->A = or_8(cpu->A, cpu->E);
         break;
-    case 0xB4://OR cpu->A with cpu->H
+    case 0xB4://OR A with H
         cpu->A = or_8(cpu->A,cpu->H);
         break;
-    case 0xB5://OR cpu->A with cpu->L
+    case 0xB5://OR A with L
         cpu->A = or_8(cpu->A,cpu->L);
         break;
-    case 0xB6://OR cpu->A with value pointed by cpu->Hcpu->L
+    case 0xB6://OR A with value pointed by HL
         cpu->A = or_8(cpu->A,read(u8_to_u16(cpu->H,cpu->L)));
         break;
-    case 0xB7://OR cpu->A with cpu->A
+    case 0xB7://OR A with A
         cpu->A = or_8(cpu->A,cpu->A);
         break;
-    case 0xB8://compare cpu->B against cpu->A
+    case 0xB8://compare B against A
         comp_8(cpu->A,cpu->B);
         break;
-    case 0xB9://compare cpu->C against cpu->A
+    case 0xB9://compare C against A
         comp_8(cpu->A,cpu->C);
         break;
-    case 0xBA://compare cpu->D against cpu->A
+    case 0xBA://compare D against A
         comp_8(cpu->A,cpu->D);
         break;
-    case 0xBB://compare E against cpu->A
+    case 0xBB://compare E against A
         comp_8(cpu->A, cpu->E);
         break;
-    case 0xBC://compare cpu->H against cpu->A
+    case 0xBC://compare H against A
         comp_8(cpu->A,cpu->H);
         break;
-    case 0xBD://compare cpu->L against cpu->A
+    case 0xBD://compare L against A
         comp_8(cpu->A,cpu->L);
         break;
-    case 0xBE://compare value pointed by cpu->Hcpu->L against cpu->A
+    case 0xBE://compare value pointed by HL against A
         comp_8(cpu->A,read(u8_to_u16(cpu->H,cpu->L)));
         break;
-    case 0xBF://compare cpu->A against cpu->A
+    case 0xBF://compare A against A
         comp_8(cpu->A,cpu->A);
         break;
 
     case 0xC0://Return if last result was not zero
         if(!(cpu->F & 0x80)) {
 	    ret();
+	    cpu->jump_taken = 1;
         }
 	cpu->cycle_counter += 4;
 
         break;
     case 0xC1://POP stack into BC
-        cpu->C = read(cpu->SP++);
-        cpu->B = read(cpu->SP++);
+        cpu->C = read(cpu->SP);
+	cpu->SP = (cpu->SP + 1) & 0xFFFF;
+        cpu->B = read(cpu->SP);
+	cpu->SP = (cpu->SP + 1) & 0xFFFF;
         break;
     case 0xC2://Absolute jump to 16 bit location if last result not zero
         if(!(cpu->F & 0x80)) {
 	    absolute_jump();
+	    cpu->jump_taken = 1;
         } else {
 	    pc_change((cpu->PC + 2) & 0xFFFF);
 	    cpu->cycle_counter += 4;
@@ -2155,14 +2189,15 @@ void cpu_step(u8 opcode)
     case 0xC4://call routine at 16 bit immediate if last result not zero
         if(!(cpu->F & 0x80)) {
 	    call_nn();
+	    cpu->jump_taken = 1;
         } else {
 	    pc_change((cpu->PC + 2) & 0xFFFF);
 	    cpu->cycle_counter += 4;
         }
         break;
     case 0xC5://PUSH BC onto stack
-        write(--cpu->SP,cpu->B);
-        write(--cpu->SP,cpu->C);
+	push_stack(cpu->B, cpu->C);
+	cpu->cycle_counter += 4;
         break;
     case 0xC6://ADD immediate to A
     {
@@ -2175,6 +2210,7 @@ void cpu_step(u8 opcode)
     case 0xC8://Return if last result was zero
         if(cpu->F & 0x80) {
 	    ret();
+	    cpu->jump_taken = 1;
         }
 	cpu->cycle_counter += 4;
         break;
@@ -2184,17 +2220,27 @@ void cpu_step(u8 opcode)
     case 0xCA://Absolute jump to 16 bit location if last result zero
         if(cpu->F & 0x80) {
 	    absolute_jump();
+	    cpu->jump_taken = 1;
         } else {
 	    pc_change((cpu->PC + 2) & 0xFFFF);
 	    cpu->cycle_counter += 4;
         }
         break;
     case 0xCB://double byte instruction
-        cb_opcodes(pc_read());
+    {
+	u8 tmp = pc_read();
+	cb_opcodes(tmp);
+	u8 cycles = load_json(med_obj, tmp, cpu->jump_taken ? 1 : 0, "cbprefixed");
+	if(cpu->cycle_counter != cycles)
+	    printf("CB expected %d got %d opcode %X\n", cycles, cpu->cycle_counter, tmp);
+    }
+
+    //cb_opcodes(pc_read());
         break;
     case 0xCC://call routine at 16 bit immediate if last result was zero
         if(cpu->F & 0x80) {
 	    call_nn();
+	    cpu->jump_taken = 1;
         } else {
 	    pc_change((cpu->PC + 2) & 0xFFFF);
 	    cpu->cycle_counter += 4;
@@ -2203,7 +2249,7 @@ void cpu_step(u8 opcode)
     case 0xCD://call routine at 16 bit immediate
 	call_nn();
         break;
-    case 0xCE://ADD immediate and carry to cpu->A
+    case 0xCE://ADD immediate and carry to A
         cpu->A = add_8c(cpu->A,pc_read());
         break;
     case 0xCF://call routine at 0x0008
@@ -2212,17 +2258,21 @@ void cpu_step(u8 opcode)
     case 0xD0://Return if last result was not carry
         if(!(cpu->F & 0x10)) {
 	    ret();
+	    cpu->jump_taken = 1;
         }
 	cpu->cycle_counter += 4;
 
         break;
-    case 0xD1://POP stack into cpu->DE
-        cpu->E = read(cpu->SP++);
-        cpu->D = read(cpu->SP++);
+    case 0xD1://POP stack into DE
+        cpu->E = read(cpu->SP);
+	cpu->SP = (cpu->SP + 1) & 0xFFFF;
+        cpu->D = read(cpu->SP);
+	cpu->SP = (cpu->SP + 1) & 0xFFFF;
         break;
     case 0xD2://Absolute jump to 16 bit location if last result not carry
         if(!(cpu->F & 0x10)) {
 	    pc_change(u8_to_u16(read(cpu->PC + 1), read(cpu->PC)));
+	    cpu->jump_taken = 1;
         } else {
 	    pc_change((cpu->PC + 2) & 0xFFFF);
 	    cpu->cycle_counter += 4;
@@ -2232,6 +2282,7 @@ void cpu_step(u8 opcode)
         if(!(cpu->F & 0x10)) {
 	    push_stack(((cpu->PC + 2) >> 8) & 0xFF, (cpu->PC + 2) & 0xFF);
 	    pc_change(u8_to_u16(read(cpu->PC + 1), read(cpu->PC)));
+	    cpu->jump_taken = 1;
         } else {
 	    pc_change((cpu->PC + 2) & 0xFFFF);
 	    cpu->cycle_counter += 4;
@@ -2239,6 +2290,7 @@ void cpu_step(u8 opcode)
         break;
     case 0xD5://PUSH DE onto stack
 	push_stack(cpu->D, cpu->E);
+	cpu->cycle_counter += 4;
         break;
     case 0xD6://SUB immediate against A
         cpu->A = sub_8(cpu->A,pc_read());
@@ -2249,6 +2301,7 @@ void cpu_step(u8 opcode)
     case 0xD8://Return if last result was carry
         if(cpu->F & 0x10) {
 	    ret();
+	    cpu->jump_taken = 1;
         }
 	cpu->cycle_counter += 4;
         break;
@@ -2259,6 +2312,7 @@ void cpu_step(u8 opcode)
     case 0xDA://Absolute jump to 16 bit immediate if last result carry
         if(cpu->F & 0x10) {
             pc_change(u8_to_u16(read(cpu->PC + 1),read(cpu->PC)));
+	    cpu->jump_taken = 1;
         } else {
 	    pc_change((cpu->PC + 2) & 0xFFFF);
 	    cpu->cycle_counter += 4;
@@ -2271,6 +2325,7 @@ void cpu_step(u8 opcode)
             write(--cpu->SP,((cpu->PC + 2) >> 8) & 0xFF);
             write(--cpu->SP,((cpu->PC + 2) & 0xFF) );
             pc_change(u8_to_u16(read(cpu->PC + 1),read(cpu->PC)));
+	    cpu->jump_taken = 1;
         } else {
 	    pc_change((cpu->PC + 2) & 0xFFFF);
 	    cpu->cycle_counter += 4;
@@ -2278,32 +2333,34 @@ void cpu_step(u8 opcode)
 	break;
     case 0xDD://not used
 	break;
-    case 0xDE://Subtract immediate and carry from cpu->A
+    case 0xDE://Subtract immediate and carry from A
 	cpu->A = sub_8c(cpu->A,pc_read());
         break;
     case 0xDF://call routine at 0x0018
 	call_routine(0x18);
         break;
 
-    case 0xE0://save cpu->A at address pointed to by 0xFF00 + immediate
+    case 0xE0://save A at address pointed to by 0xFF00 + immediate
         write(0xFF00 + pc_read(),cpu->A);
         break;
-    case 0xE1://POP stack into cpu->Hcpu->L
-        cpu->L = read(cpu->SP++);
-        cpu->H = read(cpu->SP++);
+    case 0xE1://POP stack into HL
+        cpu->L = read(cpu->SP);
+	cpu->SP = (cpu->SP + 1) & 0xFFFF;
+        cpu->H = read(cpu->SP);
+	cpu->SP = (cpu->SP + 1) & 0xFFFF;
         break;
-    case 0xE2://save cpu->A at address pointed to by 0xFF00 + cpu->C
+    case 0xE2://save A at address pointed to by 0xFF00 + C
         write(0xFF00 + cpu->C,cpu->A);
         break;
     case 0xE3://not used
         break;
     case 0xE4://not used
         break;
-    case 0xE5://PUScpu->H cpu->Hcpu->L onto stack
-        write(--cpu->SP,cpu->H);
-        write(--cpu->SP,cpu->L);
+    case 0xE5://PUSH HL onto stack
+	push_stack(cpu->H, cpu->L);
+	cpu->cycle_counter += 4;
         break;
-    case 0xE6://ANcpu->D immediate against cpu->A
+    case 0xE6://AND immediate against cpu->A
         cpu->A = and_8(cpu->A,pc_read());
         break;
     case 0xE7://call routine at 0x20
@@ -2317,12 +2374,12 @@ void cpu_step(u8 opcode)
             set_carry();
         if((cpu->SP ^ number ^ (result & 0xFFFF)) & 0x10)
             set_halfcarry();
-        cpu->SP = (u16)(result);
-	cpu->cycle_counter += 4;
+        cpu->SP = result & 0xFFFF;
+	cpu->cycle_counter += 8;
     }
     break;
     case 0xE9://PC equals HL
-	pc_change(u8_to_u16(cpu->H,cpu->L));
+	cpu->PC = u8_to_u16(cpu->H,cpu->L);
         break;
     case 0xEA://save A at 16bit immediate given address
         write(u8_to_u16(read(cpu->PC + 1), read(cpu->PC)), cpu->A);
@@ -2334,19 +2391,16 @@ void cpu_step(u8 opcode)
         break;
     case 0xED://not used
         break;
-    case 0xEE://xor 8 bit immediate against cpu->A
+    case 0xEE://xor 8 bit immediate against A
         cpu->A = xor_8(cpu->A,pc_read());
         break;
     case 0xEF://call routine at 0x28
 	call_routine(0x28);
         break;
 
-    case 0xF0://load cpu->A from address pointed to by 0xFF00 + immediate 8bit
-    {
-	int temp = pc_read();
-        cpu->A = read(0xFF00 + temp);
+    case 0xF0://load A from address pointed to by 0xFF00 + immediate 8bit
+        cpu->A = read(0xFF00 + pc_read());
         break;
-    }
     case 0xF1://POP stack into AF low nibbles of flag register should be zeroed
         cpu->F = read(cpu->SP) & 0xF0;
 	cpu->SP = (cpu->SP + 1) & 0xFFFF;
@@ -2359,11 +2413,11 @@ void cpu_step(u8 opcode)
     case 0xF3://Disable interrupts.
         cpu->interrupt_master_enable = 0;
         break;
-    case 0xF5://PUScpu->H cpu->Acpu->F onto stack
-        write(--cpu->SP,cpu->A);
-        write(--cpu->SP,cpu->F);
+    case 0xF5://PUSH AF onto stack
+	push_stack(cpu->A, cpu->F);
+	cpu->cycle_counter += 4;
         break;
-    case 0xF6://OR immediate against cpu->A
+    case 0xF6://OR immediate against A
         cpu->A = or_8(cpu->A,pc_read());
         break;
     case 0xF7://call routine at 0x30
@@ -2380,6 +2434,7 @@ void cpu_step(u8 opcode)
             set_halfcarry();
         cpu->H = (result >> 8) & 0xFF;
         cpu->L = result & 0xFF;
+	cpu->cycle_counter += 4;
     }
     break;
     case 0xF9://copy HL to SP
@@ -2408,7 +2463,6 @@ void cpu_step(u8 opcode)
         printf("%X Not implemented yet\n",opcode);
         break;
     }
-    //printf("%d %ld\n", cpu->op_time, cpu->cycle_counter);
 }
 
 static void interrupt(u16 address)
@@ -2416,14 +2470,15 @@ static void interrupt(u16 address)
     cpu->interrupt_master_enable = 0;
     write(--cpu->SP, (cpu->PC >> 8) & 0xFF);
     write(--cpu->SP, (cpu->PC & 0xFF));
-    cpu->PC = 0x0040;
-    timer_tick(3);
-    gpu_step(3);
+    cpu->PC = address;
+    timer_tick(12);
+    gpu_step(12);
 }
 
 void print_cpu()
 {
-    printf("cpu->A: %X cpu->F: %X cpu->B: %X cpu->C: %X cpu->D: %X E: %X cpu->H: %X cpu->L: %X\n",cpu->A,cpu->F,cpu->B,cpu->C,cpu->D,cpu->E,cpu->H,cpu->L);
+    printf("cpu->A: %X cpu->F: %X cpu->B: %X cpu->C: %X cpu->D: %X E: %X cpu->H: %X cpu->L: %X\n",
+	   cpu->A,cpu->F,cpu->B,cpu->C,cpu->D,cpu->E,cpu->H,cpu->L);
     printf("SP: %X\n",cpu->SP);
     printf("cpu->PC:%X\n",cpu->PC);
 }
@@ -2440,7 +2495,7 @@ void cpu_init()
     cpu->D = 0;
     cpu->C = 0x13;
     cpu->B = 0;
-    cpu->A = 0x11;
+    cpu->A = 0x01;
 
     cpu->interrupt_master_enable = 0;
     cpu->cpu_halt = 0;
@@ -2465,10 +2520,36 @@ void cpu_run_once()
     print_cpu();
 }
 
+static unsigned int load_json(const json_object *med_obj,
+			      const unsigned int opcode, const int pos,
+			      const char *prefix)
+{
+    struct json_object *medi_array, *medj_array;
+    medi_array = json_object_object_get(med_obj, prefix);
+    char temp_c[4];
+    sprintf(temp_c, "0x%x", opcode);
+    medi_array = json_object_object_get(medi_array, temp_c);
+    medj_array = json_object_object_get(medi_array, "cycles");
+    int arraylen = json_object_array_length(medj_array);
+    if(arraylen == 1)
+	return json_object_get_int(json_object_array_get_idx(medj_array, 0));
+    else
+	return json_object_get_int(json_object_array_get_idx(medj_array, pos ? 0 : 1));
+}
+
 void cpu_run()
 {
+    static const char filename[] = "opcodes.json";
+    med_obj = json_object_from_file(filename);
+    if (!med_obj) {
+	fprintf(stderr, "load JSON data from %s failed.\n", filename);
+	return;
+    }
+
+
     while(!cpu->cpu_exit_loop) {
 	cpu->cycle_counter = 0;
+	cpu->jump_taken = 0;
 	if(cpu->cpu_halt){
 	    cpu->cycle_counter += 4;
 	}else{
@@ -2478,8 +2559,13 @@ void cpu_run()
 		cpu_step(read(cpu->PC));
 		cpu->PC_skip = 0;
 	    }
-	    else
-		cpu_step(pc_read());
+	    else{
+		u8 tmp = pc_read();
+		cpu_step(tmp);
+		u8 cycles = load_json(med_obj, tmp, cpu->jump_taken ? 1 : 0, "unprefixed");
+		if(cpu->cycle_counter != cycles && tmp != 0xCB)
+		    printf("!!!! expected %d got %d opcode %X\n", cycles, cpu->cycle_counter, tmp);
+	    }
 	}
 	timer_tick(cpu->cycle_counter);
 	gpu_step(cpu->cycle_counter);

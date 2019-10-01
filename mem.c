@@ -32,7 +32,6 @@
 #define SOUND_MODE_3_OUTPUT_LEVEL_REGISTER 0xFF1C
 #define SOUND_MODE_3_FREQUENCY_LOW_DATA_REGISTER 0xFF1D
 #define SOUND_MODE_3_FREQUENCY_HIGH_DATA_REGISTER 0xFF1E
-
 #define SOUND_MODE_4_SOUND_LENGTH_REGISTER 0xFF20
 #define SOUND_MODE_4_ENVELOPE_REGISTER 0xFF21
 #define SOUND_MODE_4_POLYNOMIAL_COUNTER_REGISTER 0xFF22
@@ -75,6 +74,7 @@ void mem_init(){
     memory->rom_offset = 0x4000; // Offset for second ROM bank
     memory->ram_offset = 0x0000;
     memory->interrupt_enable = 0;
+    memory->debug = 0;
     mbc_init();
 }
 
@@ -167,19 +167,45 @@ u8 get_mem(u16 address){
                 return memory->oam[address & 0xFF];
             else
                 printf("OAM read error %X\n", address);
+	    return 0;
         case 0xF00:
-            if(address == INTERRUPT_ENABLE){
-                return memory->interrupt_enable;
-            }
             if(address < 0xFF80){
                 switch(address){
                 case 0xFF00://get keys being pressed
                     return display_get_key();
+		case SERIAL_TRANSFER_DATA:
+		case SIO_CONTROL:
+		  return 0; // TODO
                 case DIVIDER_REGISTER:
 		case TIMER_COUNTER:
 		case TIMER_MODULO:
 		case TIMER_CONTROL:
 		    return timer_read_byte(address);
+                case INTERRUPT_FLAG:
+                    return memory->interrupt_flags;
+
+		case SOUND_MODE_1_SWEEP_REGISTER:
+		case SOUND_MODE_1_LENGTH_PATTERN_REGISTER:
+		case SOUND_MODE_1_ENVELOPE_REGISTER:
+		case SOUND_MODE_1_FREQUENCY_LOW_REGISTER:
+		case SOUND_MODE_1_FREQUENCY_HIGH_REGISTER:
+		case SOUND_MODE_2_SOUND_LENGTH_REGISTER:
+		case SOUND_MODE_2_ENVELOPE_REGISTER:
+		case SOUND_MODE_2_FREQUENCY_LOW_REGISTER:
+		case SOUND_MODE_2_FREQUENCY_HIGH_REGISTER:
+		case SOUND_MODE_3_SOUND_ON_OFF_REGISTER:
+		case SOUND_MODE_3_SOUND_LENGTH_REGISTER:
+		case SOUND_MODE_3_OUTPUT_LEVEL_REGISTER:
+		case SOUND_MODE_3_FREQUENCY_LOW_DATA_REGISTER:
+		case SOUND_MODE_3_FREQUENCY_HIGH_DATA_REGISTER:
+		case SOUND_MODE_4_SOUND_LENGTH_REGISTER:
+		case SOUND_MODE_4_ENVELOPE_REGISTER:
+		case SOUND_MODE_4_POLYNOMIAL_COUNTER_REGISTER:
+		case SOUND_MODE_4_COUNTER_REGISTER:
+		case SOUND_CHANNEL_CONTROL:
+		case SOUND_OUTPUT_SELECTION_TERMINAL:
+		case SOUND_ON_OFF:
+		  return 0; //TODO
 
                 case LCD_CONTROL_REGISTER: // FF40
                     return get_lcd_control_register();
@@ -191,21 +217,42 @@ u8 get_mem(u16 address){
                     return get_scroll_x();
                 case CURRENT_FRAME_LINE://get the current frame line
                     return gpu_get_line();
+		case FRAME_LINE_COMPARE:
+		  printf("Need to implement FLC\n");
+		  return 0;
+		case DMA_TRANSFER:
+		  printf("Shouldn't be reading DMA_TRANSFER\n");
+		  return 0;
                 case BACKGROUND_PALETTE_MEMORY:
                     return gpu_get_palette(BACKGROUND_PALETTE);
                 case OBJECT_PALETTE0_MEMORY:
                     return gpu_get_palette(OBJECT_PALETTE0);
                 case OBJECT_PALETTE1_MEMORY:
                     return gpu_get_palette(OBJECT_PALETTE1);
-                case INTERRUPT_FLAG:
-                    return memory->interrupt_flags;
+		case WINDOW_X_POS:
+		  printf("Implement read window x %d\n");
+		  return 0;
+		case WINDOW_Y_POS:
+		  printf("Implement read window y %d\n");
+		  return 0;
+                case DISABLE_BOOT_ROM://disable boot rom
+		  fprintf(stderr,"Why would you read disabling the boot rom?\n");
+		  return 0;
+
                 default:
+		  printf("mem.c get_mem should be catching this %X\n",
+			 address);
                     return 0;
                 }
             }
 	    // 128 Bytes of zram
             if(address >= 0xFF80)
-		return memory->zram[address & 0x7F];
+	      {
+		if(address == INTERRUPT_ENABLE)
+		  return memory->interrupt_enable;
+		else
+		  return memory->zram[address & 0x7F];
+	      }
         }
     default:
         fprintf(stderr,"Reading from invalid memory address: %x \n",address);
@@ -217,7 +264,7 @@ u16 get_mem_16(u16 address){
     return (get_mem(address) <<8) + get_mem(address+1);
 }
 
-void set_mem(u16 address,u8 value){
+void set_mem(u16 address, u8 value){
     switch(address & 0xF000){
 	// MBC1: External RAM switch
     case 0x0000: case 0x1000:
@@ -306,20 +353,45 @@ void set_mem(u16 address,u8 value){
                 return;
             }
         case 0xF00:
-            if(address == INTERRUPT_ENABLE){
-                memory->interrupt_enable = value;
-                return;
-            }
             if(address < 0xFF80){
                 switch(address){
-                case 0xFF00://keys
+                case SYSTEM_JOYPAD_TYPE_REGISTER://keys
                     display_set_key(value);
                     return;
+		case SERIAL_TRANSFER_DATA:
+		case SIO_CONTROL:
+		  return; // TODO
 		case DIVIDER_REGISTER:
 		case TIMER_COUNTER:
 		case TIMER_MODULO:
 		case TIMER_CONTROL:
 		    return timer_write_byte(address, value);
+                case INTERRUPT_FLAG:
+                    memory->interrupt_flags = value;
+                    return;
+
+		case SOUND_MODE_1_SWEEP_REGISTER:
+		case SOUND_MODE_1_LENGTH_PATTERN_REGISTER:
+		case SOUND_MODE_1_ENVELOPE_REGISTER:
+		case SOUND_MODE_1_FREQUENCY_LOW_REGISTER:
+		case SOUND_MODE_1_FREQUENCY_HIGH_REGISTER:
+		case SOUND_MODE_2_SOUND_LENGTH_REGISTER:
+		case SOUND_MODE_2_ENVELOPE_REGISTER:
+		case SOUND_MODE_2_FREQUENCY_LOW_REGISTER:
+		case SOUND_MODE_2_FREQUENCY_HIGH_REGISTER:
+		case SOUND_MODE_3_SOUND_ON_OFF_REGISTER:
+		case SOUND_MODE_3_SOUND_LENGTH_REGISTER:
+		case SOUND_MODE_3_OUTPUT_LEVEL_REGISTER:
+		case SOUND_MODE_3_FREQUENCY_LOW_DATA_REGISTER:
+		case SOUND_MODE_3_FREQUENCY_HIGH_DATA_REGISTER:
+		case SOUND_MODE_4_SOUND_LENGTH_REGISTER:
+		case SOUND_MODE_4_ENVELOPE_REGISTER:
+		case SOUND_MODE_4_POLYNOMIAL_COUNTER_REGISTER:
+		case SOUND_MODE_4_COUNTER_REGISTER:
+		case SOUND_CHANNEL_CONTROL:
+		case SOUND_OUTPUT_SELECTION_TERMINAL:
+		case SOUND_ON_OFF:
+		  return; //TODO
                 case LCD_CONTROL_REGISTER://lcd control register
                     set_lcd_control_register(value);
                     return;
@@ -331,6 +403,19 @@ void set_mem(u16 address,u8 value){
                 case LCD_SCROLL_X_REGISTER://lcd scroll X register
                     set_scroll_x(value);
                     return;
+		case CURRENT_FRAME_LINE:
+		  printf("Shouldn't change frame line\n");
+		  return;
+		case FRAME_LINE_COMPARE:
+		  printf("Shouldn't compare frame line??\n");
+		  return;
+		case DMA_TRANSFER:
+		  {
+		    u16 source_address = value << 8;
+		    for(unsigned int i = 0; i < 0xA0; i++)
+			set_mem(0xFE00 + i, get_mem(source_address + i));
+		  }
+		  return;
                 case BACKGROUND_PALETTE_MEMORY://palette
                     gpu_set_palette(value, BACKGROUND_PALETTE);
                     return;
@@ -340,9 +425,12 @@ void set_mem(u16 address,u8 value){
                 case OBJECT_PALETTE1_MEMORY:
                     gpu_set_palette(value, OBJECT_PALETTE1);
                     return;
-                case INTERRUPT_FLAG:
-                    memory->interrupt_flags = value;
-                    return;
+		case WINDOW_X_POS:
+		  printf("Implement window x %d\n", value);
+		  return;
+		case WINDOW_Y_POS:
+		  printf("Implement window y %d\n", value);
+		  return;
                 case DISABLE_BOOT_ROM://disable boot rom
                     if(value == 1)
                         memory->in_bios = 0;
@@ -352,12 +440,20 @@ void set_mem(u16 address,u8 value){
                     }
                     return;
                 default:
+		  printf("mem.c should be catching this %X %X\n",
+			 address, value);
                     return;
                 }
             }
             if(address >= 0xFF80){
+	      if(address == INTERRUPT_ENABLE){
+                memory->interrupt_enable = value;
+                return;
+	      }
+	      else {
                 memory->zram[address & 0x7F] = value;
                 return;
+	      }
             }
         }
     default:

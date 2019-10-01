@@ -5,7 +5,7 @@
 
 void timer_check();
 void timer_init();
-void timer_tick(int);
+void timer_tick(const unsigned int);
 u8 timer_read_byte(u16);
 void timer_write_byte(u16, u8);
 

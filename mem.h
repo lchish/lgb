@@ -35,6 +35,7 @@ typedef struct{
     u32 rom_offset;
     u32 ram_offset;
     MemoryBankController memory_bank_controllers[2];
+    u32 debug;
 }Memory;
 
 extern Memory *memory;

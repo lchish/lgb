@@ -30,6 +30,7 @@ typedef struct{
     int PC_skip; // HALT bug
     int interrupt_skip; // Doesn't jump to interrupt vector
     unsigned long cycle_counter;
+    unsigned long jump_taken;
 }Cpu;
 
 #endif
