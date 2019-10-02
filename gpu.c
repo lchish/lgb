@@ -115,14 +115,12 @@ u8 gpu_get_scroll_y(){
 }
 
 void gpu_set_window_x(const u8 value){
-  printf("This game is using the window\n");
   gpu->window_x = value;
 }
 u8 gpu_get_window_x(){
   return gpu->window_x;
 }
 void gpu_set_window_y(const u8 value){
-  printf("This game is using the window\n");
   gpu->window_y = value;
 }
 u8 gpu_get_window_y(){
@@ -268,36 +266,46 @@ static void render_scan(){
     if(gpu->sprite_display_enable){
         for(int i = 0; i < NUM_SPRITES; i++){
             Sprite *sprite = &gpu->sprites[i];
-            if(sprite->y <= gpu->line && (sprite->y + 8) > gpu->line){
-	      printf("rendering sprite %d tile %d x %d y %d gpu line %d\n",
-		     i, sprite->tile, sprite->x, sprite->y, gpu->line);
+	    if(sprite->y <= gpu->line &&
+	       ((!gpu->sprite_size && (sprite->y + 8) > gpu->line) ||
+		(gpu->sprite_size && (sprite->y + 16) > gpu->line)))
+	      {
 		u8 *tilerow;
 		if(sprite->yflip) {
+		  if(gpu->sprite_size)
+		    {
+		      if(15 - (gpu->line - sprite->y) < 8)
+			tilerow = gpu->tiles[sprite->tile]
+			  [15 - (gpu->line - sprite->y)];
+		      else
+			tilerow = gpu->tiles[sprite->tile + 1]
+			  [7 - (gpu->line - sprite->y)];
+		    }
+		  
+		  else
 		    tilerow = gpu->tiles[sprite->tile]
 		      [7 - (gpu->line - sprite->y)];
 		} else {
+		  if(gpu->sprite_size && gpu->line - sprite->y > 7 )
+		    tilerow = gpu->tiles[sprite->tile + 1][gpu->line - sprite->y - 8];
+		  else
 		    tilerow = gpu->tiles[sprite->tile][gpu->line - sprite->y];
-		}
+		} 
 
 		u8 *palette = sprite->palette ? gpu->object_palette1_colours :
-		    gpu->object_palette0_colours;
+		  gpu->object_palette0_colours;
 
-                for(int x = 0; x < 8; x++){
-		  if ((sprite->x + x) >= 0 && (sprite->x + x) < WIDTH
-			// Check it's not transparent
-			/* Disable check for now to debug */
-			/*palette[tilerow[sprite->xflip ? (7 - x) : x]] &&*/
-		       && (sprite->prio || !gpu->scanrow[sprite->x + x]))
-		      {
-                        gpu->frame_buffer[gpu->line][sprite->x + x] =
-			    palette[tilerow[sprite->xflip ? (7 - x) : x]];
-                    }
-                }
-	    }
-	    /*	    else
-	      printf("Not rendering sprite %d tile %d x %d y %d gpu line %d\n",
-	      i, sprite->tile, sprite->x, sprite->y, gpu->line);*/
-        }
+		for(int x = 0; x < 8; x++){
+		  if ((sprite->x + x) >= 0 && (sprite->x + x) < WIDTH &&
+		      palette[tilerow[sprite->xflip ? (7 - x) : x]] &&
+		      (sprite->prio || !gpu->scanrow[sprite->x + x]))
+		    {
+		      gpu->frame_buffer[gpu->line][sprite->x + x] =
+			palette[tilerow[sprite->xflip ? (7 - x) : x]];
+		    }
+		}
+	      }
+	}
     }
 }
 
@@ -310,6 +318,7 @@ static void swap_buffers(){
     }
     if(gpu->lcd_display_enable)
         display_redraw();
+#define SLEEP
 #ifdef SLEEP
     /* Sleep until the frame time is finished */
     struct timespec frame_end_time;
