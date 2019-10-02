@@ -82,7 +82,7 @@ void gpu_set_palette(const u8 value, const PaletteType palette_type){
     }
     for(int i = 0; i < 4; i++) {
 	switch((value >> (i * 2)) & 0x03) {
-	case 0: // White or transparent on sprites
+	case 0: // White or transparent/ignored on sprites
 	    palette_colours[i] = 0;
 	    break;
 	case 1: // Light gray
@@ -160,7 +160,7 @@ void gpu_update_tile(const u16 address, const u8 value){
         gpu->tiles[tile_num][y][x] = ((get_mem(addy) & sx) ? 1 : 0) |
             ((get_mem(addy + 1) & sx) ? 2 : 0);
     }
-    display_tile_map();
+    //display_tile_map();
     //display_gpu_memory();
 }
 
@@ -297,7 +297,7 @@ static void render_scan(){
 
 		for(int x = 0; x < 8; x++){
 		  if ((sprite->x + x) >= 0 && (sprite->x + x) < WIDTH &&
-		      palette[tilerow[sprite->xflip ? (7 - x) : x]] &&
+		      tilerow[sprite->xflip ? (7 - x) : x] && // if the palette index is 0 it's trasparent
 		      (sprite->prio || !gpu->scanrow[sprite->x + x]))
 		    {
 		      gpu->frame_buffer[gpu->line][sprite->x + x] =
