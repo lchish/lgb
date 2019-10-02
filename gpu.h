@@ -70,7 +70,7 @@ typedef struct{
     u16 background_tile_map_display;// 0 = 9800-9BFF, 1 = 9C00-9FFF
     int sprite_size;
     int sprite_display_enable;
-    int background_display;
+    int background_display_enable;
 
     u8 background_palette;
     u8 object_palette0;
