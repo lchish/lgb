@@ -31,8 +31,8 @@ typedef enum {
 
 typedef struct{
     int tile;
-    u8 x;
-    u8 y;
+    int x;
+    int y;
     int palette;
     int xflip;
     int yflip;

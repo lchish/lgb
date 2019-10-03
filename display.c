@@ -39,15 +39,19 @@ static void key_up(SDL_Scancode skey){
         key->rows[0] |= 0x01;
         break;
     case SDL_SCANCODE_DOWN://down
+    case SDL_SCANCODE_K:
         key->rows[1] |= 0x08;
         break;
     case SDL_SCANCODE_UP://up
+    case SDL_SCANCODE_I:
         key->rows[1] |= 0x04;
         break;
     case SDL_SCANCODE_LEFT://left
+    case SDL_SCANCODE_J:
         key->rows[1] |= 0x02;
         break;
     case SDL_SCANCODE_RIGHT://right
+    case SDL_SCANCODE_L:
         key->rows[1] |= 0x01;
         break;
     case SDL_SCANCODE_ESCAPE:
@@ -80,15 +84,19 @@ static void key_down(SDL_Scancode skey){//clear the right bit
         key->rows[0] &= 0x0E;
         break;
     case SDL_SCANCODE_DOWN://down
+    case SDL_SCANCODE_K:
         key->rows[1] &= 0x07;
         break;
     case SDL_SCANCODE_UP://up
+    case SDL_SCANCODE_I:
         key->rows[1] &= 0x0B;
         break;
     case SDL_SCANCODE_LEFT://left
+    case SDL_SCANCODE_J:
         key->rows[1] &= 0x0D;
         break;
     case SDL_SCANCODE_RIGHT://right
+    case SDL_SCANCODE_L:
         key->rows[1] &= 0x0E;
         break;
     default:
