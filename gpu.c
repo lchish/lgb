@@ -183,13 +183,10 @@ void gpu_update_sprite(const u16 address, const u8 value){
       sprite->palette = (value & 0x10) ? 1 : 0;
       sprite->xflip = (value & 0x20) ? 1 : 0;
       sprite->yflip = (value & 0x40) ? 1 : 0;
-      sprite->prio = (value & 0x80) ? 1 : 0;
+      sprite->prio = (value & 0x80) ? 1 : 0; //0=OBJ Above BG, 1=OBJ Behind BG color 1-3
       break;
     }
   }
-  /*  if(sprite_num < 10)
-    printf("Updated sprite %d x %d y %d tile %d prio %d\n",
-    sprite_num, sprite->x, sprite->y, sprite->tile, sprite->prio);*/
 }
 
 static void render_scan(){
@@ -207,7 +204,7 @@ static void render_scan(){
 	tile += 256;
       u8 *tilerow = gpu->tiles[tile][y];
       for(int i = 0; i < WIDTH; i++){
-	gpu->scanrow[WIDTH - x] = tilerow[x];
+	//gpu->scanrow[i] = tilerow[x]; needs testing
 	gpu->frame_buffer[gpu->line][i] =
 	  gpu->background_palette_colours[tilerow[x]];
 	x++;
@@ -224,7 +221,7 @@ static void render_scan(){
       u8 *tilerow = gpu->tiles[get_mem(mapoffset + lineoffset)][y];
       for(int i = 0; i < WIDTH; i++)
 	{
-	  gpu->scanrow[WIDTH - x] = tilerow[x];
+	  //gpu->scanrow[i] = tilerow[x]; needs testing
 	  gpu->frame_buffer[gpu->line][i] =
 	    gpu->background_palette_colours[tilerow[x]];
 	  x++;
@@ -287,18 +284,11 @@ static void render_scan(){
 	    gpu->object_palette0_colours;
 
 	  for(int x = 0; x < 8; x++){
-	    if(i == 2 || i == 5)
-	      printf("tile %d sprite->x %d x %d y %d value %d flip %d\n\
-scanrow %d\n",
-		     i, sprite->x, x, gpu->line,
-		     palette[tilerow[sprite->xflip ? (7 - x) : x]],
-		     sprite->xflip,
-		     gpu->scanrow[sprite->x + x]);
 	    if(sprite->x + x >= 0 && sprite->x + x < WIDTH &&
  		// if the palette index is 0 it's trasparent
 		tilerow[sprite->xflip ? (7 - x) : x] &&
 		// check background priority BG color 0 is always behind OBJ
-		(sprite->prio || !gpu->scanrow[sprite->x + x]))
+	       (!sprite->prio /*|| !gpu->scanrow[sprite->x + x]not sure if this is right*/))
 	      {
 		gpu->frame_buffer[gpu->line][sprite->x + x] =
 		  palette[tilerow[sprite->xflip ? (7 - x) : x]];
