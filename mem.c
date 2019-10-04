@@ -141,6 +141,7 @@ u8 get_mem(u16 address){
 
     // Switched memory
     case 0x4000: case 0x5000: case 0x6000: case 0x7000:
+      //printf("Accessing memory %X\n", memory->rom_offset + (address & 0x3FFF));
 	return memory->rom[memory->rom_offset + (address & 0x3FFF)];
 
         //Video Ram 2KB
@@ -271,7 +272,7 @@ void set_mem(u16 address, u8 value){
 	case 2:
 	case 3:
 	    memory->memory_bank_controllers[1].ram_on = ((value & 0x0F) == 0x0A) ? 1 : 0;
-	    printf("ram on %X\n", memory->memory_bank_controllers[1].ram_on);
+	    printf("ram on %X\n", address);
 	    break;
 	}
 	// MBC1: ROM bank

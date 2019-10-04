@@ -54,6 +54,7 @@ typedef struct{
 
     int line;
     int line_compare;
+    int line_compare_enable;
     int mode;
     int curscan;
 

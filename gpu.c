@@ -11,13 +11,16 @@ GPU *gpu;
 void gpu_init(){
     unsigned int x,y;
     gpu = malloc(sizeof(GPU));
-    gpu->clock = gpu->mode = 0;
+    gpu->clock = 0;
+    gpu->mode = 0;
     gpu->line = 0;
     gpu->curscan = 0;
     gpu->scroll_x = 0;
     gpu->scroll_y = 0;
+    gpu->window_x = 0;
+    gpu->window_y = 0;
 
-    gpu->lcd_control_register = 0;
+    gpu->lcd_control_register = 0x91;
     gpu->lcd_display_enable = 0;
     gpu->window_tile_map_display_select = 0x9800;
     gpu->window_display_enable = 0;
@@ -25,6 +28,8 @@ void gpu_init(){
     gpu->background_tile_map_display = 0x9800;
     gpu->background_display_enable = 0;
     gpu->sprite_display_enable = 0;
+    gpu->line_compare = 0;
+    gpu->line_compare_enable = 0;
 
     for(y=0;y<HEIGHT;y++){
         for(x=0;x<WIDTH;x++){
@@ -33,7 +38,9 @@ void gpu_init(){
         }
     }
     memset(gpu->sprites, 0, sizeof(Sprite) * 40);
-
+    gpu_set_palette(0xFC, BACKGROUND_PALETTE );
+    gpu_set_palette(0xFF, OBJECT_PALETTE0);
+    gpu_set_palette(0xFF, OBJECT_PALETTE1);
 }
 
 u8 gpu_get_line(){
@@ -367,9 +374,10 @@ void gpu_step(int op_time){
   }
 }
 void gpu_set_status_register(const u8 value){
-  printf("gpu_set_status_register %X\n", value);
+  printf("gpu_set_status_register not finished %X\n", value);
+  gpu->line_compare_enable = value & 0x40 ? 1: 0;
 }
 
 u8 gpu_get_status_register(){
-  return gpu->mode | (gpu->line == gpu->line_compare ? 0x04 : 0);
+  return gpu->mode | (gpu->line == gpu->line_compare_enable ? 0x40 : 0);
 }

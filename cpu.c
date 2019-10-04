@@ -1447,16 +1447,13 @@ void cpu_step(u8 opcode)
 {
     u16 tmp;
     int signed_tmp;
-    if(memory->debug)
-	printf("op: %X\n", opcode);
     //cpu_writeout_state(opcode);
     switch(opcode) {
     case 0x00://no-op
         break;
     case 0x01://load 16bit immediate into BC
-        cpu->C=read(cpu->PC);
-        cpu->B=read(cpu->PC + 1);
-	cpu->PC += 2;
+        cpu->C = pc_read();
+        cpu->B = pc_read();
         break;
     case 0x02://Save A to address pointed by BC
         write(u8_to_u16(cpu->B,cpu->C),cpu->A);
@@ -1474,8 +1471,7 @@ void cpu_step(u8 opcode)
         cpu->B = dec_8(cpu->B);
         break;
     case 0x06://Load immediate into B
-        cpu->B = read(cpu->PC);
-	cpu->PC++;
+      cpu->B = pc_read();
         break;
     case 0x07:// rotate left through carry accumulator
         cpu->A = rot_left_carry_8(cpu->A);
@@ -1489,7 +1485,7 @@ void cpu_step(u8 opcode)
         break;
     }
     case 0x09://Add BC to HL
-        tmp = add_16(u8_to_u16(cpu->B,cpu->C),u8_to_u16(cpu->H,cpu->L));
+        tmp = add_16(u8_to_u16(cpu->B, cpu->C),u8_to_u16(cpu->H, cpu->L));
         cpu->H = (tmp >> 8) & 0xFF;
         cpu->L = tmp & 0xFF;
 	cpu->cycle_counter += 4;
@@ -1592,14 +1588,14 @@ void cpu_step(u8 opcode)
         cpu->H = read(cpu->PC + 1);
 	cpu->PC += 2;
         break;
-    case 0x22://Save A to address pointed by cpu->Hcpu->L and increment HL
-        write(u8_to_u16(cpu->H,cpu->L),cpu->A);
-        tmp = inc_16(u8_to_u16(cpu->H,cpu->L));
+    case 0x22://Save A to address pointed by HL and increment HL
+        write(u8_to_u16(cpu->H, cpu->L), cpu->A);
+        tmp = inc_16(u8_to_u16(cpu->H, cpu->L));
         cpu->H = (tmp >> 8) & 0xFF;
         cpu->L = tmp & 0xFF;
         break;
     case 0x23: //INC HL
-        tmp = inc_16(u8_to_u16(cpu->H,cpu->L));
+        tmp = inc_16(u8_to_u16(cpu->H, cpu->L));
         cpu->H = ((tmp & 0xFF00) >> 8);
         cpu->L = tmp & 0xFF;
 	cpu->cycle_counter += 4;
@@ -2341,7 +2337,7 @@ void cpu_step(u8 opcode)
         break;
 
     case 0xE0://save A at address pointed to by 0xFF00 + immediate
-        write(0xFF00 + pc_read(),cpu->A);
+        write(0xFF00 + pc_read(), cpu->A);
         break;
     case 0xE1://POP stack into HL
         cpu->L = read(cpu->SP);
@@ -2382,9 +2378,12 @@ void cpu_step(u8 opcode)
 	cpu->PC = u8_to_u16(cpu->H,cpu->L);
         break;
     case 0xEA://save A at 16bit immediate given address
-        write(u8_to_u16(read(cpu->PC + 1), read(cpu->PC)), cpu->A);
-        cpu->PC += 2;
-        break;
+      {
+	u8 low = pc_read();
+	u8 high = pc_read();
+        write(u8_to_u16(high, low), cpu->A);
+      }
+      break;
     case 0xEB://not used
         break;
     case 0xEC://not used
@@ -2487,15 +2486,15 @@ void cpu_init()
 {
     cpu = malloc(sizeof(Cpu));
     cpu->PC = 0x100;
-    cpu->SP = 0xFFFE;
-    cpu->H = 0x01;
     cpu->L = 0x4D;
-    cpu->F = 0;
+    cpu->H = 0x01;
     cpu->E = 0xD8;
     cpu->D = 0;
     cpu->C = 0x13;
     cpu->B = 0;
     cpu->A = 0x01;
+    cpu->F = 0xB0;
+    cpu->SP = 0xFFFE;
 
     cpu->interrupt_master_enable = 0;
     cpu->cpu_halt = 0;
