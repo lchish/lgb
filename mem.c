@@ -75,6 +75,7 @@ void mem_init(){
     memory->ram_offset = 0x0000;
     memory->interrupt_enable = 0;
     memory->debug = 0;
+    memory->memory_bank_controller = 0;
     mbc_init();
 }
 
@@ -82,17 +83,43 @@ void load_rom(FILE* f){
     int tmp;
     u8 cartheader[0x150];
     char game_title[0x10];
+    int cart_type;
     for(int i = 0; i < 0x150 && (tmp = getc(f)) != EOF; i++)
 	cartheader[i] = tmp;
     for(int i = 0; i < 0x10; i++)
 	game_title[i] = cartheader[0x0134 + i];
     printf("Welcome to %s\n", game_title);
     fseek(f, 0, SEEK_SET);
-    memory->cart_type = cartheader[0x0147];
+    cart_type = cartheader[0x0147];
     memory->rom_banks = cartheader[0x0148];
     memory->ram_banks = cartheader[0x0149];
     printf("cart_type %X rom_banks %d ram banks %d\n",
-	   memory->cart_type, memory->rom_banks, memory->ram_banks);
+	   cart_type, memory->rom_banks, memory->ram_banks);
+
+    switch(cart_type){
+    case 0:
+      memory->memory_bank_controller = 0;
+      break;
+    case 1:
+    case 2:
+    case 3:
+      memory->memory_bank_controller = 1;
+      break;
+    case 5:
+    case 6:
+      memory->memory_bank_controller = 2;
+      break;
+    case 0x0F:
+    case 0x10:
+    case 0x11:
+    case 0x12:
+    case 0x13:
+      memory->memory_bank_controller = 3;
+      break;
+    default:
+      printf("Cart type %X MBC controller not implemented\n");
+    }
+
     switch(memory->ram_banks){
     case 0:
 	memory->eram = NULL;
@@ -266,7 +293,7 @@ void set_mem(u16 address, u8 value){
     switch(address & 0xF000){
 	// MBC1: External RAM switch
     case 0x0000: case 0x1000:
-	switch(memory->cart_type)
+	switch(memory->memory_bank_controller)
 	{
 	case 1:
 	case 2:
@@ -277,23 +304,29 @@ void set_mem(u16 address, u8 value){
 	}
 	// MBC1: ROM bank
     case 0x2000: case 0x3000:
-	switch(memory->cart_type)
+	switch(memory->memory_bank_controller)
 	{
-	case 1:
+	case 1:	// Set lower 5 bits of ROM bank (skipping #0)
+	  value &= 0x1F; // 125 banks only lower 5 bits can be set here
+	  if(value == 0) value = 1;
+	  memory->memory_bank_controllers[1].rom_bank &= 0x60;
+	  memory->memory_bank_controllers[1].rom_bank |= value;
+	  memory->rom_offset = memory->memory_bank_controllers[1].rom_bank * 0x4000;
+	  break;
 	case 2:
+	  value &= 0x0F; // 16 banks
+	  break;
 	case 3:
-	    	// Set lower 5 bits of ROM bank (skipping #0)
-	    memory->memory_bank_controllers[1].rom_bank &= 0x60;
-	    value &= 0x1F;
-	    if(!value) value = 1;
-	    memory->memory_bank_controllers[1].rom_bank |= value;
-	    memory->rom_offset = memory->memory_bank_controllers[1].rom_bank * 0x4000;
+	  value &= 0x7F; // 128 banks! Directly mapped
+	  if(value == 0) value = 1;
+	  memory->memory_bank_controllers[1].rom_bank = value;
+	  memory->rom_offset = memory->memory_bank_controllers[1].rom_bank * 0x4000;
+	  break;
 	}
-	break;
 	// MBC1: RAM bank
     case 0x4000:
     case 0x5000:
-	switch(memory->cart_type)
+	switch(memory->memory_bank_controller)
 	{
 	case 1:
 	case 2:
@@ -308,15 +341,28 @@ void set_mem(u16 address, u8 value){
 		memory->rom_offset = memory->memory_bank_controllers[1].rom_bank * 0x4000;
 	    }
 	    break;
+	case 3:
+	  if(value < 0x04)
+	    {
+	      memory->memory_bank_controllers[1].ram_bank = value & 0x03;
+	      memory->ram_offset = memory->memory_bank_controllers[1].ram_bank * 0x2000;
+	    }
+	  else if(value >= 0x08 && value <= 0x0C) // RTC register select
+	      printf("RTC register not supported yet!!\n");
+	  else
+	    printf("MBC3 ram bank value %X not recognised\n", value);
 	}
 	break;
     case 0x6000: case 0x7000:
-	switch(memory->cart_type)
+	switch(memory->memory_bank_controller)
 	{
 	case 1:
 	case 2:
 	    memory->memory_bank_controllers[1].mode = value & 1;
 	    break;
+	case 3:// latch clock data
+	  printf("Latch clock data todo\n");
+	  break;
 	}
         break;
         //VRAM 2KB

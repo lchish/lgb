@@ -29,11 +29,11 @@ typedef struct{
     u8 interrupt_enable;
     u8 interrupt_flags;
     int in_bios;
-    int cart_type;
     int rom_banks;
     int ram_banks;
     u32 rom_offset;
     u32 ram_offset;
+    int memory_bank_controller;
     MemoryBankController memory_bank_controllers[2];
     u32 debug;
 }Memory;
