@@ -62,10 +62,10 @@ Memory *memory;
 
 void mbc_init()
 {
-    memory->memory_bank_controllers[1].rom_bank = 0;
-    memory->memory_bank_controllers[1].ram_bank = 0;
-    memory->memory_bank_controllers[1].ram_on = 0;
-    memory->memory_bank_controllers[1].mode = 0;
+    memory->memory_bank_controllers.rom_bank = 0;
+    memory->memory_bank_controllers.ram_bank = 0;
+    memory->memory_bank_controllers.ram_on = 0;
+    memory->memory_bank_controllers.mode = 0;
 }
 
 void mem_init(){
@@ -139,6 +139,9 @@ void load_rom(FILE* f){
     case 5: // 64KB
 	memory->eram = malloc(0x10000);
 	break;
+    default:
+      printf("Ram banks %X not supported\n");
+      break;
     }
     memory->rom = malloc(sizeof(u8) * (0x8000 << memory->rom_banks));
     for(int i = 0; i < 0x8000 << memory->rom_banks && (tmp = getc(f)) != EOF; i++)
@@ -177,8 +180,10 @@ u8 get_mem(u16 address){
 
         // External switchable ram 2KB
     case 0xA000: case 0xB000:
+      if(memory->memory_bank_controllers.ram_on)
 	return memory->eram[memory->ram_offset + (address & 0x1FFF)];
-
+      else
+	return 0;
         //internal ram 2KB
     case 0xC000: case 0xD000: case 0xE000:
 	return memory->wram[address & 0x1FFF];
@@ -298,10 +303,11 @@ void set_mem(u16 address, u8 value){
 	case 1:
 	case 2:
 	case 3:
-	    memory->memory_bank_controllers[1].ram_on = ((value & 0x0F) == 0x0A) ? 1 : 0;
+	    memory->memory_bank_controllers.ram_on = (value & 0x0F) == 0x0A;
 	    printf("ram on %X\n", address);
 	    break;
 	}
+	return;
 	// MBC1: ROM bank
     case 0x2000: case 0x3000:
 	switch(memory->memory_bank_controller)
@@ -309,62 +315,74 @@ void set_mem(u16 address, u8 value){
 	case 1:	// Set lower 5 bits of ROM bank (skipping #0)
 	  value &= 0x1F; // 125 banks only lower 5 bits can be set here
 	  if(value == 0) value = 1;
-	  memory->memory_bank_controllers[1].rom_bank &= 0x60;
-	  memory->memory_bank_controllers[1].rom_bank |= value;
-	  memory->rom_offset = memory->memory_bank_controllers[1].rom_bank * 0x4000;
+	  memory->memory_bank_controllers.rom_bank &= 0x60;
+	  memory->memory_bank_controllers.rom_bank |= value;
+	  memory->rom_offset = memory->memory_bank_controllers.rom_bank * 0x4000;
 	  break;
 	case 2:
 	  value &= 0x0F; // 16 banks
+	  if(value == 0) value = 1;
+	  memory->memory_bank_controllers.rom_bank = value;
+	  memory->rom_offset = memory->memory_bank_controllers.rom_bank * 0x4000;
 	  break;
 	case 3:
 	  value &= 0x7F; // 128 banks! Directly mapped
 	  if(value == 0) value = 1;
-	  memory->memory_bank_controllers[1].rom_bank = value;
-	  memory->rom_offset = memory->memory_bank_controllers[1].rom_bank * 0x4000;
+	  memory->memory_bank_controllers.rom_bank = value;
+	  memory->rom_offset = memory->memory_bank_controllers.rom_bank * 0x4000;
 	  break;
 	}
+	return;
 	// MBC1: RAM bank
     case 0x4000:
     case 0x5000:
 	switch(memory->memory_bank_controller)
 	{
 	case 1:
-	case 2:
-	    if(memory->memory_bank_controllers[1].mode) {
+	case 2:// the same as MBC1 but only 16 rom banks supported
+	    if(memory->memory_bank_controllers.mode) {
 		// RAM mode set bank
-		memory->memory_bank_controllers[1].ram_bank = value & 0x03;
-		memory->ram_offset = memory->memory_bank_controllers[1].ram_bank * 0x2000;
+		memory->memory_bank_controllers.ram_bank = value & 0x03;
+		memory->ram_offset = memory->memory_bank_controllers.ram_bank * 0x2000;
 	    } else {
 		// ROM mode: set high bits of bank
-		memory->memory_bank_controllers[1].rom_bank &= 0x1F;
-		memory->memory_bank_controllers[1].rom_bank |= ((value & 0x03) << 5);
-		memory->rom_offset = memory->memory_bank_controllers[1].rom_bank * 0x4000;
+		memory->memory_bank_controllers.rom_bank &= 0x1F;
+		memory->memory_bank_controllers.rom_bank |= ((value & 0x03) << 5);
+		memory->rom_offset = memory->memory_bank_controllers.rom_bank * 0x4000;
 	    }
 	    break;
 	case 3:
 	  if(value < 0x04)
 	    {
-	      memory->memory_bank_controllers[1].ram_bank = value & 0x03;
-	      memory->ram_offset = memory->memory_bank_controllers[1].ram_bank * 0x2000;
+	      memory->memory_bank_controllers.ram_bank = value & 0x03;
+	      memory->ram_offset = memory->memory_bank_controllers.ram_bank * 0x2000;
 	    }
 	  else if(value >= 0x08 && value <= 0x0C) // RTC register select
 	      printf("RTC register not supported yet!!\n");
 	  else
 	    printf("MBC3 ram bank value %X not recognised\n", value);
+	  break;
+	default:
+	  printf("MBC ram bank %X not supported yet\n",
+		 memory->memory_bank_controller);
+	  break;
 	}
-	break;
+	return;
     case 0x6000: case 0x7000:
 	switch(memory->memory_bank_controller)
 	{
 	case 1:
 	case 2:
-	    memory->memory_bank_controllers[1].mode = value & 1;
+	    memory->memory_bank_controllers.mode = value & 1;
 	    break;
 	case 3:// latch clock data
 	  printf("Latch clock data todo\n");
 	  break;
+	default:
+	  printf("MBC extra %X not supported yet\n",
+		 memory->memory_bank_controller);
 	}
-        break;
+        return;
         //VRAM 2KB
     case 0x8000: case 0x9000:
         memory->vram[address & 0x1FFF] = value;
@@ -373,8 +391,9 @@ void set_mem(u16 address, u8 value){
         return;
         //Swtichable RAM 2KB
     case 0xA000: case 0xB000:
+      if(memory->memory_bank_controllers.ram_on)
 	memory->eram[memory->ram_offset + (address & 0x1FFF)] = value;
-        return;
+      return;
         //Internal RAM 2KB
     case 0xC000: case 0xD000:
         memory->wram[address & 0x1FFF] = value;
@@ -394,8 +413,8 @@ void set_mem(u16 address, u8 value){
             if(address < 0xFEA0){
                 memory->oam[address & 0xFF] = value;
                 gpu_update_sprite(address, value);
-                return;
             }
+	    return;
         case 0xF00:
             if(address < 0xFF80){
                 switch(address){
@@ -487,7 +506,7 @@ void set_mem(u16 address, u8 value){
                 default:
 		  printf("mem.c should be catching this %X %X\n",
 			 address, value);
-                    return;
+		  return;
                 }
             }
             if(address >= 0xFF80){
