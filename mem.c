@@ -93,6 +93,11 @@ void load_rom(FILE* f){
     memory->ram_banks = cartheader[0x0149];
     printf("cart_type %X rom_banks %d ram banks %d\n",
 	   memory->cart_type, memory->rom_banks, memory->ram_banks);
+
+    memory->rom = malloc(sizeof(u8) * (0x8000 << memory->rom_banks));
+    for(int i = 0; i < 0x8000 << memory->rom_banks && (tmp = getc(f)) != EOF; i++)
+        memory->rom[i] = tmp;
+
     switch(memory->ram_banks){
     case 0:
 	memory->eram = NULL;
@@ -106,16 +111,9 @@ void load_rom(FILE* f){
     case 3: // 32KB
 	memory->eram = malloc(0x8000);
 	break;
-    case 4: // 128KB
-	memory->eram = malloc(0x20000);
-	break;
-    case 5: // 64KB
-	memory->eram = malloc(0x10000);
-	break;
+    default:
+      printf("Ram bank size %d not recognised\n", memory->ram_banks);
     }
-    memory->rom = malloc(sizeof(u8) * (0x8000 << memory->rom_banks));
-    for(int i = 0; i < 0x8000 << memory->rom_banks && (tmp = getc(f)) != EOF; i++)
-        memory->rom[i] = tmp;
 }
 
 //get  value at a memory address
@@ -150,7 +148,14 @@ u8 get_mem(u16 address){
 
         // External switchable ram 2KB
     case 0xA000: case 0xB000:
+      if(memory->memory_bank_controllers[1].ram_on)
 	return memory->eram[memory->ram_offset + (address & 0x1FFF)];
+      else
+	{
+	  printf("Reading ram but ram not on\n");
+	  return 0;
+	}
+      
 
         //internal ram 2KB
     case 0xC000: case 0xD000: case 0xE000:
@@ -271,10 +276,10 @@ void set_mem(u16 address, u8 value){
 	case 1:
 	case 2:
 	case 3:
-	    memory->memory_bank_controllers[1].ram_on = ((value & 0x0F) == 0x0A) ? 1 : 0;
-	    printf("ram on %X\n", address);
-	    break;
+	  memory->memory_bank_controllers[1].ram_on = ((value & 0x0F) == 0x0A) ? 1 : 0;
+	  printf("ram on %X %X\n", value, memory->memory_bank_controllers[1].ram_on);
 	}
+	break;
 	// MBC1: ROM bank
     case 0x2000: case 0x3000:
 	switch(memory->cart_type)
@@ -282,32 +287,37 @@ void set_mem(u16 address, u8 value){
 	case 1:
 	case 2:
 	case 3:
-	    	// Set lower 5 bits of ROM bank (skipping #0)
-	    memory->memory_bank_controllers[1].rom_bank &= 0x60;
-	    value &= 0x1F;
-	    if(!value) value = 1;
-	    memory->memory_bank_controllers[1].rom_bank |= value;
-	    memory->rom_offset = memory->memory_bank_controllers[1].rom_bank * 0x4000;
+	  // Set lower 5 bits of ROM bank number (skipping #0)
+	  memory->memory_bank_controllers[1].rom_bank &= 0x60; // wipe out lower 5 bytes
+	  value &= 0x1F;
+	  if(!value) value = 1;
+	  memory->memory_bank_controllers[1].rom_bank |= value;
+	  memory->rom_offset = memory->memory_bank_controllers[1].rom_bank * 0x4000;
 	}
 	break;
-	// MBC1: RAM bank
+	// MBC1: RAM Bank Number - or - Upper Bits of ROM Bank Number
     case 0x4000:
     case 0x5000:
 	switch(memory->cart_type)
 	{
 	case 1:
 	case 2:
-	    if(memory->memory_bank_controllers[1].mode) {
-		// RAM mode set bank
-		memory->memory_bank_controllers[1].ram_bank = value & 0x03;
-		memory->ram_offset = memory->memory_bank_controllers[1].ram_bank * 0x2000;
-	    } else {
+	  switch(memory->memory_bank_controllers[1].mode)
+	    {
+	    case 0:
 		// ROM mode: set high bits of bank
 		memory->memory_bank_controllers[1].rom_bank &= 0x1F;
 		memory->memory_bank_controllers[1].rom_bank |= ((value & 0x03) << 5);
 		memory->rom_offset = memory->memory_bank_controllers[1].rom_bank * 0x4000;
+		break;
+	    case 1:
+		// RAM mode set bank
+		memory->memory_bank_controllers[1].ram_bank = value & 0x03;
+		memory->ram_offset = memory->memory_bank_controllers[1].ram_bank * 0x2000;
+		break;
+	    default:
+	      printf("Shouldn't be here\n");
 	    }
-	    break;
 	}
 	break;
     case 0x6000: case 0x7000:
@@ -327,8 +337,11 @@ void set_mem(u16 address, u8 value){
         return;
         //Swtichable RAM 2KB
     case 0xA000: case 0xB000:
+      if(memory->memory_bank_controllers[1].ram_on)
 	memory->eram[memory->ram_offset + (address & 0x1FFF)] = value;
-        return;
+      else
+	printf("Writing ram but ram not on\n");
+      return;
         //Internal RAM 2KB
     case 0xC000: case 0xD000:
         memory->wram[address & 0x1FFF] = value;
