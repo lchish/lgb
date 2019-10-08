@@ -211,7 +211,7 @@ static void render_scan(){
 	tile += 256;
       u8 *tilerow = gpu->tiles[tile][y];
       for(int i = 0; i < WIDTH; i++){
-	//gpu->scanrow[i] = tilerow[x]; needs testing
+	gpu->scanrow[i] = tilerow[x];
 	gpu->frame_buffer[gpu->line][i] =
 	  gpu->background_palette_colours[tilerow[x]];
 	x++;
@@ -228,7 +228,7 @@ static void render_scan(){
       u8 *tilerow = gpu->tiles[get_mem(mapoffset + lineoffset)][y];
       for(int i = 0; i < WIDTH; i++)
 	{
-	  //gpu->scanrow[i] = tilerow[x]; needs testing
+	  gpu->scanrow[i] = tilerow[x];
 	  gpu->frame_buffer[gpu->line][i] =
 	    gpu->background_palette_colours[tilerow[x]];
 	  x++;
@@ -243,7 +243,7 @@ static void render_scan(){
   if(gpu->window_display_enable && gpu->line >= gpu->window_y){
     unsigned mapoffset = gpu->window_tile_map_display_select +
       ((((gpu->line + gpu->window_y) & 0xFF) >> 3) << 5);
-    unsigned lineoffset = (gpu->window_x >> 3) & 0x1F;
+    unsigned lineoffset = ((gpu->window_x - 7) >> 3) & 0x1F;
     unsigned y = (gpu->line + gpu->window_y) & 7;
     unsigned x = (gpu->window_x - 7) & 7;
 
@@ -254,8 +254,8 @@ static void render_scan(){
     u8 *tilerow = gpu->tiles[tile][y];
     for(int i = 0; i < WIDTH; i++){
       //palette shared with background
-      gpu->frame_buffer[gpu->line][i] =
-	gpu->background_palette_colours[tilerow[x]];
+	gpu->frame_buffer[gpu->line][i] =
+	  gpu->background_palette_colours[tilerow[x]];
       x++;
       if(x == 8){
 	lineoffset = (lineoffset + 1) & 0x1F;
@@ -295,7 +295,7 @@ static void render_scan(){
  		// if the palette index is 0 it's trasparent
 		tilerow[sprite->xflip ? (7 - x) : x] &&
 		// check background priority BG color 0 is always behind OBJ
-	       (!sprite->prio /*|| !gpu->scanrow[sprite->x + x]not sure if this is right*/))
+	       (!sprite->prio || !gpu->scanrow[sprite->x + x]))
 	      {
 		gpu->frame_buffer[gpu->line][sprite->x + x] =
 		  palette[tilerow[sprite->xflip ? (7 - x) : x]];

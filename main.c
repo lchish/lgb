@@ -7,10 +7,10 @@
 #include "timer.h"
 
 int main(int argc,char **argv){
-    FILE *gb_file;
+  char *save_name = "lgb.sav";
 
     if(argc != 2){
-        printf("You gotta play with a game fool\n");
+        printf("Usage %s <gameboy rom>\n", argv[0]);
         return 1;
     }
 
@@ -20,10 +20,7 @@ int main(int argc,char **argv){
     display_init();
     timer_init();
 
-    gb_file = fopen(argv[1],"r");
-
-    if(gb_file){
-        load_rom(gb_file);
+    if(load_rom(argv[1], save_name) == 0){
         while (!display.exit){
             cpu_run();
             display_get_input();
@@ -32,6 +29,6 @@ int main(int argc,char **argv){
         fprintf(stderr,"File not found\n");
         return 1;
     }
-
+    mem_save_ram(save_name);
     return 0;
 }

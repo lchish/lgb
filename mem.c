@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <unistd.h>
 
 #include "types.h"
 #include "cpu.h"
@@ -65,6 +66,7 @@ void mbc_init()
     memory->memory_bank_controllers.rom_bank = 0;
     memory->memory_bank_controllers.ram_bank = 0;
     memory->memory_bank_controllers.ram_on = 0;
+    memory->memory_bank_controllers.ram_battery = 0;
     memory->memory_bank_controllers.mode = 0;
 }
 
@@ -76,20 +78,26 @@ void mem_init(){
     memory->interrupt_enable = 0;
     memory->debug = 0;
     memory->memory_bank_controller = 0;
+    memory->eram_size = 0;
     mbc_init();
 }
 
-void load_rom(FILE* f){
+int load_rom(char* gb_rom_name, char *save_file_name){
     int tmp;
     u8 cartheader[0x150];
     char game_title[0x10];
     int cart_type;
-    for(int i = 0; i < 0x150 && (tmp = getc(f)) != EOF; i++)
+    FILE *gb_rom = fopen(gb_rom_name, "r");
+    FILE *save_file = NULL;
+    if(!gb_rom)
+      return -1;
+
+    for(int i = 0; i < 0x150 && (tmp = getc(gb_rom)) != EOF; i++)
 	cartheader[i] = tmp;
     for(int i = 0; i < 0x10; i++)
 	game_title[i] = cartheader[0x0134 + i];
     printf("Welcome to %s\n", game_title);
-    fseek(f, 0, SEEK_SET);
+    fseek(gb_rom, 0, SEEK_SET);
     cart_type = cartheader[0x0147];
     memory->rom_banks = cartheader[0x0148];
     memory->ram_banks = cartheader[0x0149];
@@ -109,43 +117,82 @@ void load_rom(FILE* f){
     case 6:
       memory->memory_bank_controller = 2;
       break;
+    case 0x09:
+      memory->memory_bank_controllers.ram_battery = 1;
+      break;
+    case 0x0D:
+      memory->memory_bank_controllers.ram_battery = 1;
+      break;
     case 0x0F:
-    case 0x10:
-    case 0x11:
-    case 0x12:
-    case 0x13:
       memory->memory_bank_controller = 3;
       break;
+    case 0x10:
+      memory->memory_bank_controllers.ram_battery = 1;
+      break;
+    case 0x11: // MBC3
+      memory->memory_bank_controller = 3;
+      break;
+    case 0x12: // MBC3 + RAM
+      memory->memory_bank_controller = 3;
+      break;
+    case 0x13: // MBC3 + RAM + BATTERY
+      memory->memory_bank_controller = 3;
+      memory->memory_bank_controllers.ram_battery = 1;
+      break;
     default:
-      printf("Cart type %X MBC controller not implemented\n");
+      printf("Cart type %X MBC controller not implemented\n", cart_type);
     }
 
     switch(memory->ram_banks){
     case 0:
 	memory->eram = NULL;
+	memory->eram_size = 0;
 	break;
     case 1: // 2KB
 	memory->eram = malloc(0x800);
+	memory->eram_size = 0x800;
 	break;
     case 2: // 8KB
 	memory->eram = malloc(0x2000);
+	memory->eram_size = 0x2000;
 	break;
     case 3: // 32KB
 	memory->eram = malloc(0x8000);
-	break;
-    case 4: // 128KB
-	memory->eram = malloc(0x20000);
-	break;
-    case 5: // 64KB
-	memory->eram = malloc(0x10000);
+	memory->eram_size = 0x8000;
 	break;
     default:
-      printf("Ram banks %X not supported\n");
+      printf("Ram banks %X not supported\n", memory->ram_banks);
       break;
     }
+
+    /* If the game has battery backed RAM it needs to be loaded in */
+    if(memory->memory_bank_controllers.ram_battery &&
+       access(save_file_name, F_OK) != -1)
+      {
+	save_file = fopen(save_file_name, "r");
+	for(int i = 0; i < memory->eram_size && (tmp = getc(save_file)) != EOF;
+	    i++)
+	  memory->eram[i] = tmp;
+	fclose(save_file);
+      }
+
     memory->rom = malloc(sizeof(u8) * (0x8000 << memory->rom_banks));
-    for(int i = 0; i < 0x8000 << memory->rom_banks && (tmp = getc(f)) != EOF; i++)
-        memory->rom[i] = tmp;
+    for(int i = 0; i < 0x8000 << memory->rom_banks &&
+	  (tmp = getc(gb_rom)) != EOF; i++)
+      memory->rom[i] = tmp;
+    fclose(gb_rom);
+
+    return 0;
+}
+
+void mem_save_ram(char *save_file_name){
+  if(memory->memory_bank_controllers.ram_battery)
+    {
+      FILE *save_file = fopen(save_file_name, "w");
+      for(int i = 0; i < memory->eram_size; i++)
+	putc(memory->eram[i], save_file);
+      fclose(save_file);
+    }
 }
 
 //get  value at a memory address
@@ -304,7 +351,7 @@ void set_mem(u16 address, u8 value){
 	case 2:
 	case 3:
 	    memory->memory_bank_controllers.ram_on = (value & 0x0F) == 0x0A;
-	    printf("ram on %X\n", address);
+	    printf("ram on %X\n", value);
 	    break;
 	}
 	return;
@@ -454,6 +501,23 @@ void set_mem(u16 address, u8 value){
 		case SOUND_CHANNEL_CONTROL:
 		case SOUND_OUTPUT_SELECTION_TERMINAL:
 		case SOUND_ON_OFF:
+		  return; //TODO
+		case 0xFF30:
+		case 0xFF31:
+		case 0xFF32:
+		case 0xFF33:
+		case 0xFF34:
+		case 0xFF35:
+		case 0xFF36:
+		case 0xFF37:
+		case 0xFF38:
+		case 0xFF39:
+		case 0xFF3A:
+		case 0xFF3B:
+		case 0xFF3C:
+		case 0xFF3D:
+		case 0xFF3E:
+		case 0xFF3F:
 		  return; //TODO
                 case LCD_CONTROL_REGISTER:
                     gpu_set_lcd_control_register(value);
