@@ -9,7 +9,6 @@
 GPU *gpu;
 
 void gpu_init(){
-    unsigned int x,y;
     gpu = malloc(sizeof(GPU));
     gpu->clock = 0;
     gpu->mode = 0;
@@ -31,8 +30,8 @@ void gpu_init(){
     gpu->line_compare = 0;
     gpu->line_compare_enable = 0;
 
-    for(y=0;y<HEIGHT;y++){
-        for(x=0;x<WIDTH;x++){
+    for(int y = 0; y < HEIGHT; y++){
+        for(int x = 0;x < WIDTH; x++){
             gpu->screen[y][x] = 0;
             gpu->frame_buffer[y][x] =0;
         }
@@ -136,7 +135,7 @@ u8 gpu_get_window_y(){
 
 void gpu_set_lcd_control_register(const u8 value){
   gpu->lcd_control_register = value;
-  gpu->lcd_display_enable = gpu->lcd_control_register & 0x80 ? 1:0;
+  gpu->lcd_display_enable = gpu->lcd_control_register & 0x80 ? 1 : 0;
   gpu->window_tile_map_display_select = gpu->lcd_control_register & 0x40 ?
     0x9C00 : 0x9800;
   gpu->window_display_enable = gpu->lcd_control_register & 0x20 ? 1 : 0;
@@ -242,20 +241,24 @@ static void render_scan(){
   }
   if(gpu->window_display_enable && gpu->line >= gpu->window_y){
     unsigned mapoffset = gpu->window_tile_map_display_select +
-      ((((gpu->line + gpu->window_y) & 0xFF) >> 3) << 5);
-    unsigned lineoffset = ((gpu->window_x - 7) >> 3) & 0x1F;
-    unsigned y = (gpu->line + gpu->window_y) & 7;
-    unsigned x = (gpu->window_x - 7) & 7;
+      ((((gpu->line - gpu->window_y) & 0xFF) >> 3) << 5);
+    unsigned lineoffset = 0;
+    unsigned y = (gpu->line - gpu->window_y) & 7;
+    unsigned x = 0;
 
     // Indicies are always signed on the window
     unsigned tile = get_mem(mapoffset + lineoffset);
     if(tile < 128)
       tile += 256;
     u8 *tilerow = gpu->tiles[tile][y];
-    for(int i = 0; i < WIDTH; i++){
-      //palette shared with background
-	gpu->frame_buffer[gpu->line][i] =
-	  gpu->background_palette_colours[tilerow[x]];
+    for(int i = gpu->window_x - 7; i < WIDTH; i++){
+      if(i >= 0)
+	{
+	  gpu->scanrow[i] = tilerow[x];
+	  //palette shared with background
+	  gpu->frame_buffer[gpu->line][i] =
+	    gpu->background_palette_colours[tilerow[x]];
+	}
       x++;
       if(x == 8){
 	lineoffset = (lineoffset + 1) & 0x1F;
