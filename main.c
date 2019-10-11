@@ -19,6 +19,7 @@ int main(int argc,char **argv){
     gpu_init();
     display_init();
     timer_init();
+    sound_init();
 
     if(load_rom(argv[1], save_name) == 0){
         while (!display.exit){

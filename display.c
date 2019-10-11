@@ -111,13 +111,13 @@ inline u8 display_get_key(){
     case 0x20:
       return key->rows[1];
     default:
-        fprintf(stderr,"Key not recognised %d\n",key->column);
-        return 0;
+        fprintf(stderr,"Key column not recognised %X\n", key->column);
+        return 0x0F;
     }
 }
 
 inline void display_set_key(u8 value){
-    key->column = value & 0x30;
+  key->column = value & 0x30;
 }
 
 void display_get_input(){//gets the current input to the display
@@ -270,9 +270,8 @@ void display_init(){
     disp_mem_window = malloc(sizeof(Window));
     //set the keys
     key = malloc(sizeof(Key));
-    for(int i = 0; i < 2; i++){
-        key->rows[i] = 0x0F;
-    }
+    key->rows[0] = 0x0F;
+    key->rows[1] = 0x0F;
     key->column = 0;
     if(SDL_Init(SDL_INIT_VIDEO) != 0){
         fprintf(stderr,"Unable to init SDL: %s\n ", SDL_GetError());

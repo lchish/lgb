@@ -3,3 +3,6 @@
 *.gcda
 *.gcno
 lgb
+.*~
+*\#*
+*.out

@@ -75,12 +75,15 @@ void gpu_set_palette(const u8 value, const PaletteType palette_type){
     switch(palette_type){
     case BACKGROUND_PALETTE:
 	palette_colours = gpu->background_palette_colours;
+	gpu->background_palette = value;
 	break;
     case OBJECT_PALETTE0:
 	palette_colours = gpu->object_palette0_colours;
+	gpu->object_palette0 = value;
 	break;
     case OBJECT_PALETTE1:
 	palette_colours = gpu->object_palette1_colours;
+	gpu->object_palette1 = value;
 	break;
     default:
         fprintf(stderr, "gpu_set_palette: PaletteType not recongised\n");
@@ -88,7 +91,7 @@ void gpu_set_palette(const u8 value, const PaletteType palette_type){
     }
     for(int i = 0; i < 4; i++) {
 	switch((value >> (i * 2)) & 0x03) {
-	case 0: // White or transparent/ignored on sprites
+	case 0: // White
 	    palette_colours[i] = 0;
 	    break;
 	case 1: // Light gray
@@ -295,7 +298,7 @@ static void render_scan(){
 
 	  for(int x = 0; x < 8; x++){
 	    if(sprite->x + x >= 0 && sprite->x + x < WIDTH &&
- 		// if the palette index is 0 it's trasparent
+ 		// Palette index 0 is transparent
 		tilerow[sprite->xflip ? (7 - x) : x] &&
 		// check background priority BG color 0 is always behind OBJ
 	       (!sprite->prio || !gpu->scanrow[sprite->x + x]))
@@ -339,6 +342,7 @@ void gpu_step(int op_time){
   case 0: //Horizontal Blank lasts 4560 clocks including mode 2 and 3
     if(gpu->clock >= HORIZONTAL_BLANK1_TIME){
       if(gpu->line == HEIGHT - 1){//144 vblank start
+	render_scan();// render the last line!
 	gpu->mode = 1;
 	memory->interrupt_flags |= 1;
       }else{//Scanline start

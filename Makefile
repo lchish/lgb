@@ -1,9 +1,9 @@
 CFLAGS := -Wall -g
-LDFLAGS := -lSDL2
+LDFLAGS := -lSDL2 -lm
 CFLAGS += $(shell pkg-config --cflags json-c)
 LDFLAGS += $(shell pkg-config --libs json-c)
 
-SOURCES = cpu.c mem.c gpu.c main.c display.c cpu_timings.c timer-new.c
+SOURCES = cpu.c mem.c gpu.c main.c display.c cpu_timings.c timer-new.c sound.c
 HFILES=$(CFILES:.c=.h)
 OBJECTS=$(SOURCES:.c=.o)
 EXECUTABLE=lgb

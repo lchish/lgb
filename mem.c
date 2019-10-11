@@ -9,6 +9,7 @@
 #include "gpu.h"
 #include "display.h"
 #include "timer.h"
+#include "sound.h"
 
 #define SYSTEM_JOYPAD_TYPE_REGISTER 0xFF00
 #define SERIAL_TRANSFER_DATA 0xFF01
@@ -251,7 +252,7 @@ u8 get_mem(u16 address){
         case 0xF00:
             if(address < 0xFF80){
                 switch(address){
-                case 0xFF00://get keys being pressed
+                case SYSTEM_JOYPAD_TYPE_REGISTER://get keys being pressed
                     return display_get_key();
 		case SERIAL_TRANSFER_DATA:
 		case SIO_CONTROL:
@@ -265,28 +266,64 @@ u8 get_mem(u16 address){
                     return memory->interrupt_flags;
 
 		case SOUND_MODE_1_SWEEP_REGISTER:
+		  return sound_get_channel_1()->sweep;
 		case SOUND_MODE_1_LENGTH_PATTERN_REGISTER:
+		  return sound_get_channel_1()->sound_length;
 		case SOUND_MODE_1_ENVELOPE_REGISTER:
+		  return sound_get_channel_1()->volume_envelope;
 		case SOUND_MODE_1_FREQUENCY_LOW_REGISTER:
+		  return sound_get_channel_1()->frequency_low;
 		case SOUND_MODE_1_FREQUENCY_HIGH_REGISTER:
+		  return sound_get_channel_1()->frequency_high;
 		case SOUND_MODE_2_SOUND_LENGTH_REGISTER:
+		  return sound_get_channel_2()->sound_length;
 		case SOUND_MODE_2_ENVELOPE_REGISTER:
+		  return sound_get_channel_2()->volume_envelope;
 		case SOUND_MODE_2_FREQUENCY_LOW_REGISTER:
+		  return sound_get_channel_2()->frequency_low;
 		case SOUND_MODE_2_FREQUENCY_HIGH_REGISTER:
+		  return sound_get_channel_2()->frequency_high;
 		case SOUND_MODE_3_SOUND_ON_OFF_REGISTER:
+		  return sound_get_channel_3()->sound_on_off;
 		case SOUND_MODE_3_SOUND_LENGTH_REGISTER:
+		  return sound_get_channel_3()->sound_length;
 		case SOUND_MODE_3_OUTPUT_LEVEL_REGISTER:
+		  return sound_get_channel_3()->output_level;
 		case SOUND_MODE_3_FREQUENCY_LOW_DATA_REGISTER:
+		  return sound_get_channel_3()->frequency_low;
 		case SOUND_MODE_3_FREQUENCY_HIGH_DATA_REGISTER:
+		  return sound_get_channel_3()->frequency_high;
 		case SOUND_MODE_4_SOUND_LENGTH_REGISTER:
+		  return sound_get_channel_4()->sound_length;
 		case SOUND_MODE_4_ENVELOPE_REGISTER:
+		  return sound_get_channel_4()->volume_envelope;
 		case SOUND_MODE_4_POLYNOMIAL_COUNTER_REGISTER:
+		  return sound_get_channel_4()->polynomial_counter;
 		case SOUND_MODE_4_COUNTER_REGISTER:
+		  return sound_get_channel_4()->counter_consecutive;
 		case SOUND_CHANNEL_CONTROL:
+		  return sound_get_control()->channel_control;
 		case SOUND_OUTPUT_SELECTION_TERMINAL:
+		  return sound_get_control()->output_terminal;
 		case SOUND_ON_OFF:
-		  return 0; //TODO
-
+		  return sound_get_control()->sound_on_off;
+		case 0xFF30: // wave control registers
+		case 0xFF31:
+		case 0xFF32:
+		case 0xFF33:
+		case 0xFF34:
+		case 0xFF35:
+		case 0xFF36:
+		case 0xFF37:
+		case 0xFF38:
+		case 0xFF39:
+		case 0xFF3A:
+		case 0xFF3B:
+		case 0xFF3C:
+		case 0xFF3D:
+		case 0xFF3E:
+		case 0xFF3F:
+		  return sound_get_wave_pattern(address);
                 case LCD_CONTROL_REGISTER: // FF40
                     return gpu_get_lcd_control_register();
                 case LCD_STATUS_REGISTER:
@@ -481,27 +518,68 @@ void set_mem(u16 address, u8 value){
                     return;
 
 		case SOUND_MODE_1_SWEEP_REGISTER:
+		  sound_set_sweep(SOUND_CHANNEL_1, value);
+		  return;
 		case SOUND_MODE_1_LENGTH_PATTERN_REGISTER:
+		  sound_set_length(SOUND_CHANNEL_1, value);
+		  return;
 		case SOUND_MODE_1_ENVELOPE_REGISTER:
+		  sound_set_volume(SOUND_CHANNEL_1, value);
+		  return;
 		case SOUND_MODE_1_FREQUENCY_LOW_REGISTER:
+		  sound_set_frequency_low(SOUND_CHANNEL_1, value);
+		  return;
 		case SOUND_MODE_1_FREQUENCY_HIGH_REGISTER:
+		  sound_set_frequency_high(SOUND_CHANNEL_1, value);
+		  return;
 		case SOUND_MODE_2_SOUND_LENGTH_REGISTER:
+		  sound_set_length(SOUND_CHANNEL_2, value);
+		  return;
 		case SOUND_MODE_2_ENVELOPE_REGISTER:
+		  sound_set_volume(SOUND_CHANNEL_2, value);
+		  return;
 		case SOUND_MODE_2_FREQUENCY_LOW_REGISTER:
+		  sound_set_frequency_low(SOUND_CHANNEL_2, value);
+		  return;
 		case SOUND_MODE_2_FREQUENCY_HIGH_REGISTER:
+		  sound_set_frequency_high(SOUND_CHANNEL_2, value);
+		  return;
 		case SOUND_MODE_3_SOUND_ON_OFF_REGISTER:
+		  sound_set_on_off(SOUND_CHANNEL_3, value);
+		  return;
 		case SOUND_MODE_3_SOUND_LENGTH_REGISTER:
+		  sound_set_length(SOUND_CHANNEL_3, value);
+		  return;
 		case SOUND_MODE_3_OUTPUT_LEVEL_REGISTER:
+		  sound_get_channel_3()->output_level = value;
+		  return;
 		case SOUND_MODE_3_FREQUENCY_LOW_DATA_REGISTER:
+		  sound_get_channel_3()->frequency_low = value;
+		  return;
 		case SOUND_MODE_3_FREQUENCY_HIGH_DATA_REGISTER:
+		  sound_get_channel_3()->frequency_high = value;
+		  return;
 		case SOUND_MODE_4_SOUND_LENGTH_REGISTER:
+		  sound_get_channel_4()->sound_length = value;
+		  return;
 		case SOUND_MODE_4_ENVELOPE_REGISTER:
+		  sound_get_channel_4()->volume_envelope = value;
+		  return;
 		case SOUND_MODE_4_POLYNOMIAL_COUNTER_REGISTER:
+		  sound_get_channel_4()->polynomial_counter = value;
+		  return;
 		case SOUND_MODE_4_COUNTER_REGISTER:
+		  sound_get_channel_4()->counter_consecutive = value;
+		  return;
 		case SOUND_CHANNEL_CONTROL:
+		  sound_get_control()->channel_control = value;
+		  return;
 		case SOUND_OUTPUT_SELECTION_TERMINAL:
+		  sound_get_control()->output_terminal = value;
+		  return;
 		case SOUND_ON_OFF:
-		  return; //TODO
+		  sound_get_control()->sound_on_off = value;
+		  return;
 		case 0xFF30:
 		case 0xFF31:
 		case 0xFF32:
@@ -518,7 +596,8 @@ void set_mem(u16 address, u8 value){
 		case 0xFF3D:
 		case 0xFF3E:
 		case 0xFF3F:
-		  return; //TODO
+		  sound_set_wave_pattern(address, value);
+		  return;
                 case LCD_CONTROL_REGISTER:
                     gpu_set_lcd_control_register(value);
                     return;
