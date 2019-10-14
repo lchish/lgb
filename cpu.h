@@ -7,8 +7,6 @@
 extern void cpu_init();
 extern void cpu_exit();
 extern void cpu_run();
-extern void cpu_run_once();
-static void print_cpu();
 
 typedef struct{
     u8 A;

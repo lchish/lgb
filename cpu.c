@@ -2228,7 +2228,7 @@ void cpu_step(u8 opcode)
 	cb_opcodes(tmp);
 	u8 cycles = load_json(med_obj, tmp, cpu->jump_taken ? 1 : 0, "cbprefixed");
 	if(cpu->cycle_counter != cycles)
-	    printf("CB expected %d got %d opcode %X\n", cycles, cpu->cycle_counter, tmp);
+	    printf("CB expected %X got %lX opcode %X\n", cycles, cpu->cycle_counter, tmp);
     }
 
     //cb_opcodes(pc_read());
@@ -2474,14 +2474,6 @@ static void interrupt(u16 address)
     gpu_step(12);
 }
 
-void print_cpu()
-{
-    printf("cpu->A: %X cpu->F: %X cpu->B: %X cpu->C: %X cpu->D: %X E: %X cpu->H: %X cpu->L: %X\n",
-	   cpu->A,cpu->F,cpu->B,cpu->C,cpu->D,cpu->E,cpu->H,cpu->L);
-    printf("SP: %X\n",cpu->SP);
-    printf("cpu->PC:%X\n",cpu->PC);
-}
-
 void cpu_init()
 {
     cpu = malloc(sizeof(Cpu));
@@ -2506,17 +2498,6 @@ void cpu_init()
 void cpu_exit()
 {
     cpu->cpu_exit_loop = 1;
-}
-
-void cpu_run_once()
-{
-    print_cpu();
-    cpu_step(pc_read());
-
-    printf("opcode: %X\n",read(cpu->PC-1));
-    //gpu_step(cpu->op_time);
-    cpu->PC &= 0xFFFF;
-    print_cpu();
 }
 
 static unsigned int load_json(const json_object *med_obj,
@@ -2563,7 +2544,7 @@ void cpu_run()
 		cpu_step(tmp);
 		u8 cycles = load_json(med_obj, tmp, cpu->jump_taken ? 1 : 0, "unprefixed");
 		if(cpu->cycle_counter != cycles && tmp != 0xCB)
-		    printf("!!!! expected %d got %d opcode %X\n", cycles, cpu->cycle_counter, tmp);
+		    printf("!!!! expected %X got %lX opcode %X\n", cycles, cpu->cycle_counter, tmp);
 	    }
 	}
 	timer_tick(cpu->cycle_counter);

@@ -8,8 +8,6 @@
 typedef struct{
   double frequency;
   double volume;
-  int counter;
-  int channel;
 } PlayableSound;
 
 typedef enum {
@@ -66,7 +64,11 @@ typedef struct{
   Wave *wave;
   Noise *noise;
   SoundControl *control;
+  PlayableSound *channel_one_playable;
   PlayableSound *channel_two_playable;
+  PlayableSound *channel_three_playable;
+  PlayableSound *channel_four_playable;
+  int counter;
 } Sound;
 
 extern Sound *sound;

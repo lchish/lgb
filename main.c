@@ -5,6 +5,7 @@
 #include "display.h"
 #include "gpu.h"
 #include "timer.h"
+#include "sound.h"
 
 int main(int argc,char **argv){
   char *save_name = "lgb.sav";

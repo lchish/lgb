@@ -551,34 +551,34 @@ void set_mem(u16 address, u8 value){
 		  sound_set_length(SOUND_CHANNEL_3, value);
 		  return;
 		case SOUND_MODE_3_OUTPUT_LEVEL_REGISTER:
-		  sound_get_channel_3()->output_level = value;
+		  sound_set_volume(SOUND_CHANNEL_3, value);
 		  return;
 		case SOUND_MODE_3_FREQUENCY_LOW_DATA_REGISTER:
-		  sound_get_channel_3()->frequency_low = value;
+		  sound_set_frequency_low(SOUND_CHANNEL_3, value);
 		  return;
 		case SOUND_MODE_3_FREQUENCY_HIGH_DATA_REGISTER:
-		  sound_get_channel_3()->frequency_high = value;
+		  sound_set_frequency_high(SOUND_CHANNEL_3, value);
 		  return;
 		case SOUND_MODE_4_SOUND_LENGTH_REGISTER:
-		  sound_get_channel_4()->sound_length = value;
+		  sound_set_length(SOUND_CHANNEL_4, value);
 		  return;
 		case SOUND_MODE_4_ENVELOPE_REGISTER:
-		  sound_get_channel_4()->volume_envelope = value;
+		  sound_set_volume(SOUND_CHANNEL_4, value);
 		  return;
 		case SOUND_MODE_4_POLYNOMIAL_COUNTER_REGISTER:
-		  sound_get_channel_4()->polynomial_counter = value;
+		  sound_set_polynomial_counter(SOUND_CHANNEL_4, value);
 		  return;
 		case SOUND_MODE_4_COUNTER_REGISTER:
-		  sound_get_channel_4()->counter_consecutive = value;
+		  sound_set_counter_consecutive(SOUND_CHANNEL_4, value);
 		  return;
 		case SOUND_CHANNEL_CONTROL:
-		  sound_get_control()->channel_control = value;
+		  sound_set_channel_control(value);
 		  return;
 		case SOUND_OUTPUT_SELECTION_TERMINAL:
-		  sound_get_control()->output_terminal = value;
+		  sound_set_output_terminal(value);
 		  return;
 		case SOUND_ON_OFF:
-		  sound_get_control()->sound_on_off = value;
+		  sound_set_master_on_off(value);
 		  return;
 		case 0xFF30:
 		case 0xFF31:

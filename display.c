@@ -60,9 +60,6 @@ static void key_up(SDL_Scancode skey){
     case SDL_SCANCODE_P:
         cpu_exit();
         break;
-    case SDL_SCANCODE_S:
-        cpu_run_once();
-        break;
     default:
         fprintf(stderr,"Key %s not used\n", SDL_GetScancodeName(skey));
         break;
@@ -273,7 +270,7 @@ void display_init(){
     key->rows[0] = 0x0F;
     key->rows[1] = 0x0F;
     key->column = 0;
-    if(SDL_Init(SDL_INIT_VIDEO) != 0){
+    if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0){
         fprintf(stderr,"Unable to init SDL: %s\n ", SDL_GetError());
         exit(1);
     }
