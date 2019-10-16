@@ -266,23 +266,23 @@ u8 get_mem(u16 address){
                     return memory->interrupt_flags;
 
 		case SOUND_MODE_1_SWEEP_REGISTER:
-		  return sound_get_channel_1()->sweep;
+		  return sound_get_sweep();
 		case SOUND_MODE_1_LENGTH_PATTERN_REGISTER:
-		  return sound_get_channel_1()->sound_length;
+		  return sound_get_length_wave_pattern(SOUND_CHANNEL_1);
 		case SOUND_MODE_1_ENVELOPE_REGISTER:
-		  return sound_get_channel_1()->volume_envelope;
+		  return sound_get_volume(SOUND_CHANNEL_1);
 		case SOUND_MODE_1_FREQUENCY_LOW_REGISTER:
-		  return sound_get_channel_1()->frequency_low;
+		  return sound_get_frequency_low();
 		case SOUND_MODE_1_FREQUENCY_HIGH_REGISTER:
-		  return sound_get_channel_1()->frequency_high;
+		  return sound_get_frequency_high(SOUND_CHANNEL_1);
 		case SOUND_MODE_2_SOUND_LENGTH_REGISTER:
-		  return sound_get_channel_2()->sound_length;
+		  return sound_get_length_wave_pattern(SOUND_CHANNEL_2);
 		case SOUND_MODE_2_ENVELOPE_REGISTER:
-		  return sound_get_channel_2()->volume_envelope;
+		  return sound_get_volume(SOUND_CHANNEL_2);
 		case SOUND_MODE_2_FREQUENCY_LOW_REGISTER:
-		  return sound_get_channel_2()->frequency_low;
+		  return sound_get_frequency_low();
 		case SOUND_MODE_2_FREQUENCY_HIGH_REGISTER:
-		  return sound_get_channel_2()->frequency_high;
+		  return sound_get_frequency_high(SOUND_CHANNEL_2);
 		case SOUND_MODE_3_SOUND_ON_OFF_REGISTER:
 		  return sound_get_channel_3()->sound_on_off;
 		case SOUND_MODE_3_SOUND_LENGTH_REGISTER:
@@ -518,7 +518,7 @@ void set_mem(u16 address, u8 value){
                     return;
 
 		case SOUND_MODE_1_SWEEP_REGISTER:
-		  sound_set_sweep(SOUND_CHANNEL_1, value);
+		  sound_set_sweep(value);
 		  return;
 		case SOUND_MODE_1_LENGTH_PATTERN_REGISTER:
 		  sound_set_length(SOUND_CHANNEL_1, value);

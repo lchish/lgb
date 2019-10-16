@@ -3,6 +3,9 @@
 *.gcda
 *.gcno
 lgb
-.*~
+*~
 *\#*
 *.out
+*.txt
+*.gb
+*.sav
