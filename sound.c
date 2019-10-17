@@ -6,10 +6,10 @@
 #include "sound.h"
 
 #define SAMPLE_RATE 44100
-#define CHANNELS 1
+#define CHANNELS 2
 #define SAMPLES 1024
 
-const int AMPLITUDE = 500;
+const int AMPLITUDE = 250;
 
 Sound *sound;
 
@@ -23,7 +23,7 @@ static Sint16 calc_channel_one(double time)
   // sweep v2
   if(sound->channel_one->sweep_timer > // trigger event
 	 sound->channel_one->sweep_length){
-    ChannelOnePlayable *c1 = sound->channel_one;
+    ChannelOne *c1 = sound->channel_one;
     unsigned int shadow = c1->internal_frequency;
     c1->sweep_timer = 0.0;
     c1->internal_sweep_enabled = c1->sweep_shift != 0 || c1->sweep_time != 0;
@@ -67,7 +67,7 @@ static Sint16 calc_channel_one(double time)
      (!sound->channel_one->length_stop ||
       sound->channel_one->length > 0)){
     channel_value = (Sint16)
-      (AMPLITUDE * sound->channel_one->volume *
+      (AMPLITUDE * (sound->channel_one->volume / 16.0) *
        sin(2.0f * M_PI * (double)sound->channel_one->frequency *
 	   time));
   }
@@ -94,7 +94,6 @@ static Sint16 calc_channel_two(double time)
 	  (sound->channel_two_playable->volume - 1) <= 0 ? 0 :
 	  (sound->channel_two_playable->volume - 1);
       sound->channel_two_playable->volume_sweep_time = 0;
-      //printf("Vol %d\n",sound->channel_two_playable->volume);
     }
     else
       sound->channel_two_playable->volume_sweep_time += 1.0 / SAMPLE_RATE;
@@ -103,27 +102,48 @@ static Sint16 calc_channel_two(double time)
   if(sound->channel_two_playable->volume > 0 &&
      (!sound->channel_two_playable->length_stop ||
       sound->channel_two_playable->length > 0)){
-    //printf("c2 freq %d\n", sound->channel_two_playable->frequency);
     channel_value += (Sint16)
-      (AMPLITUDE * sound->channel_two_playable->volume *
+      (AMPLITUDE * (sound->channel_two_playable->volume / 16.0) *
        sin(2.0f * M_PI * (double)sound->channel_two_playable->frequency *
 	   time));
   }
   sound->channel_two_playable->length -= 1.0 / (double)SAMPLE_RATE;
   return channel_value;
-
 }
 
+static Sint16 calc_channel_three(double time)
+{
+  Sint16 channel_value = 0;
+
+  if(sound->channel_three->volume > 0 &&
+     (!sound->channel_three->length_stop ||
+      sound->channel_three->length > 0)){
+    channel_value += (Sint16)
+      (AMPLITUDE * ( 1.0 / (1 << (sound->channel_three->volume - 1))) *
+       sin(2.0f * M_PI * (double)sound->channel_three->frequency *
+	   time));
+  }
+  sound->channel_three->length -= 1.0 / (double)SAMPLE_RATE;
+  return channel_value;
+}
 
 static void sound_sdl_callback(void *data, Uint8 *raw_buffer, int bytes)
 {
   Sint16 *buffer = (Sint16*)raw_buffer;
   int length = bytes / 2; // 2 bytes per sample for AUDIO_S16SYS
   Sound *sound = (Sound*)data;
-  for(int i = 0; i < length; i++, sound->counter++)
+  for(int i = 0; i < length; i += 2, sound->counter++)
     {
       double time = (double)sound->counter / (double)SAMPLE_RATE;
-      buffer[i] = calc_channel_one(time) + calc_channel_two(time);
+      double c1 = calc_channel_one(time);
+      double c2 = calc_channel_two(time);
+      double c3 = calc_channel_three(time);
+      buffer[i] = sound->s1_volume * ((sound->output_c1_to_s1 ? c1 : 0) +
+				      (sound->output_c2_to_s1 ? c2 : 0) +
+				      (sound->output_c3_to_s1 ? c3 : 0));
+      buffer[i + 1] = sound->s2_volume * ((sound->output_c1_to_s2 ? c1 : 0) +
+					 (sound->output_c2_to_s2 ? c2 : 0) +
+					  (sound->output_c3_to_s2 ? c3 : 0));
     }
 }
 
@@ -132,13 +152,13 @@ void sound_init()
   SDL_Init(SDL_INIT_AUDIO);
 
   sound = malloc(sizeof(Sound));
-  sound->wave = malloc(sizeof(Wave));
-  sound->wave->wave_pattern = malloc(sizeof(u8) * 0x10); // 16 bytes
   sound->noise = malloc(sizeof(Noise));
   sound->control = malloc(sizeof(SoundControl));
-  sound->channel_one = malloc(sizeof(ChannelOnePlayable));
+  sound->channel_one = malloc(sizeof(ChannelOne));
   sound->channel_two_playable = malloc(sizeof(PlayableSound));
-  sound->channel_three_playable = malloc(sizeof(PlayableSound));
+  sound->channel_three = malloc(sizeof(ChannelThree));
+  sound->channel_three->wave_pattern = malloc(sizeof(u8) * 0x10); // 16 bytes
+
   sound->channel_four_playable = malloc(sizeof(PlayableSound));
   sound->counter = 0;
 
@@ -153,12 +173,12 @@ void sound_init()
   //sound->tone->frequency_low = 0;
   //sound->tone->frequency_high = 0xBF;
 
-  sound->wave->sound_on_off = 0x7F;
-  sound->wave->sound_length = 0xFF;
-  sound->wave->output_level = 0x9F;
-  sound->wave->frequency_low = 0xBF;
-  sound->wave->frequency_high = 0;
-  sound->wave->wave_pattern[0] = 0;// TODO put wave pattern in
+  //sound->wave->sound_on_off = 0x7F;
+  //sound->wave->sound_length = 0xFF;
+  //sound->wave->output_level = 0x9F;
+  //sound->wave->frequency_low = 0xBF;
+  //sound->wave->frequency_high = 0;
+  //sound->wave->wave_pattern[0] = 0;// TODO put wave pattern in
 
   sound->noise->sound_length = 0xFF;
   sound->noise->volume_envelope = 0;
@@ -197,7 +217,6 @@ void sound_set_sweep(const u8 value)
     sound->channel_one->sweep_inc_dec,
     sound->channel_one->sweep_shift);*/
 }
-
 u8 sound_get_sweep() // only channel 1
 {
   return (sound->channel_one->sweep_time & 7) << 4 |
@@ -220,9 +239,7 @@ void sound_set_length(const SoundChannel channel, const u8 value)
     sound->channel_two_playable->length = sound_length_s;
     break;
   case SOUND_CHANNEL_3:
-    {
-    int sound_length = value;
-    }
+    sound->channel_three->length = (256.0 - value) * (1.0 / 256.0);
     break;
   case SOUND_CHANNEL_4:
     sound_length = value & 3;
@@ -275,7 +292,7 @@ void sound_set_volume(const SoundChannel channel, const u8 value)
     break;
   case SOUND_CHANNEL_3:
     {
-      int volume = (value >> 5) & 0x03;
+      sound->channel_three->volume = (value >> 5) & 0x03;
     }
     break;
   default:
@@ -295,6 +312,8 @@ u8 sound_get_volume(const SoundChannel channel)
     return (sound->channel_two_playable->volume & 0xF) << 4 |
       sound->channel_two_playable->volume_inc_dec << 3 |
       (sound->channel_two_playable->internal_volume_sweep_length & 7);
+  case SOUND_CHANNEL_3:
+    return (sound->channel_three->volume & 0x3) << 5;
   default:
       printf("sound_get_volume_envelope channel %d not supported yet\n",
 	     channel);
@@ -315,14 +334,19 @@ static void update_frequency(const SoundChannel channel)
      break;
   case SOUND_CHANNEL_2:
     {
-      double freq = 131072.0 /
+      double freq =
+      sound->channel_two_playable->frequency = 131072.0 /
 	(2048.0 - sound->channel_two_playable->internal_frequency);
-      //printf("c2 new freq %f\n", freq);
-      sound->channel_two_playable->frequency = freq;
-      }
+    }
     break;
   case SOUND_CHANNEL_3:
+    {
+    double freq = 65536.0 /
+      (2048 - sound->channel_three->internal_frequency);
+    sound->channel_three->frequency = freq;
+    }
     break;
+
   default:
     fprintf(stderr, "sound.c static update_frequency channel %d not used\n", channel);
   }
@@ -336,13 +360,12 @@ void sound_set_frequency_low(const SoundChannel channel, const u8 value)
     sound->channel_one->internal_frequency |= value & 0xFF;
     break;
   case SOUND_CHANNEL_2:
-    sound->channel_two_playable->internal_frequency &= 0x700; //zero low bits
+    sound->channel_two_playable->internal_frequency &= 0x700;
     sound->channel_two_playable->internal_frequency |= value & 0xFF;
     break;
   case SOUND_CHANNEL_3:
-    {
-    sound->wave->frequency_low = value;
-    }
+    sound->channel_three->internal_frequency &= 0x700;
+    sound->channel_three->internal_frequency |= value & 0xFF;
     break;
   default:
     fprintf(stderr, "sound_set_frequency_low channel %d not used\n", channel);
@@ -366,7 +389,9 @@ void sound_set_frequency_high(const SoundChannel channel, const u8 value)
     sound->channel_two_playable->length_stop = counter;
     break;
   case SOUND_CHANNEL_3:
-    sound->wave->frequency_high = high_frequency;
+    sound->channel_three->internal_frequency &= 0xFF; //zero high bits
+    sound->channel_three->internal_frequency |= high_frequency << 8;
+    sound->channel_three->length_stop = counter;
     break;
   default:
     fprintf(stderr, "sound_set_frequency_high channel %d not used\n", channel);
@@ -379,12 +404,21 @@ void sound_set_on_off(const SoundChannel channel, const u8 value)
 {
   switch(channel){
   case SOUND_CHANNEL_3:
-    {
-      int sound_on = (value & 0x80) == 0x80; // 0 = stop 1 = playback
-    }
+      sound->channel_three->on_off = (value & 0x80) == 0x80; // 0 = stop 1 = playback
   break;
   default:
     fprintf(stderr, "sound_set_on_off channel %d not used\n", channel);
+  }
+}
+
+void sound_get_on_off(const SoundChannel channel)
+{
+  switch(channel){
+  case SOUND_CHANNEL_3:
+    return sound->channel_three->on_off;
+  default:
+    fprintf(stderr, "sound_get_on_off channel %d not used\n", channel);
+    return 0;
   }
 }
 
@@ -433,26 +467,39 @@ void sound_set_counter_consecutive(const SoundChannel channel, const u8 value)
 }
 void sound_set_channel_control(const u8 value)
 {
-  int enable_s2 = (value & 0x80) == 0x80;
-  int s2_level = (value >> 4) & 7;
-  int enable_s1 = (value & 8) == 8;
-  int s1_level = value & 7;
+  sound->enable_s2_vin = (value & 0x80) == 0x80;
+  sound->s2_volume = (value >> 4) & 7;
+  sound->enable_s1_vin = (value & 8) == 8;
+  sound->s1_volume = value & 7;
+}
+
+u8 sound_get_channel_control(){
+  return sound->enable_s2_vin << 7 + sound->s2_volume << 4 +
+    sound->enable_s1_vin << 3 + sound->s1_volume;
 }
 
 void sound_set_output_terminal(const u8 value)
 {
-  int output_c4_to_s2 = (value & 0x80) == 0x80;
-  int output_c3_to_s2 = (value & 0x40) == 0x40;
-  int output_c2_to_s2 = (value & 0x20) == 0x20;
-  int output_c1_to_s2 = (value & 0x10) == 0x10;
-  //printf("output_c1_to_s2 %d\n",output_c1_to_s2);
-  int output_c4_to_s1 = (value & 8) == 8;
-  int output_c3_to_s1 = (value & 4) == 4;
-  int output_c2_to_s1= (value & 2) == 2;
-  int output_c1_to_s1 = (value & 1) == 1;
-  //printf("output_c1_to_s1 %d\n", output_c1_to_s1);
+  sound->output_c4_to_s2 = (value & 0x80) == 0x80;
+  sound->output_c3_to_s2 = (value & 0x40) == 0x40;
+  sound->output_c2_to_s2 = (value & 0x20) == 0x20;
+  sound->output_c1_to_s2 = (value & 0x10) == 0x10;
+  sound->output_c4_to_s1 = (value & 8) == 8;
+  sound->output_c3_to_s1 = (value & 4) == 4;
+  sound->output_c2_to_s1= (value & 2) == 2;
+  sound->output_c1_to_s1 = (value & 1) == 1;
 }
-
+u8 sound_get_output_terminal()
+{
+  return (sound->output_c4_to_s2 << 7) +
+    (sound->output_c3_to_s2 << 6) +
+    (sound->output_c2_to_s2 << 5) +
+    (sound->output_c1_to_s2 << 4) +
+    (sound->output_c4_to_s1 << 3) +
+    (sound->output_c3_to_s1 << 2) +
+    (sound->output_c2_to_s1 << 1) +
+    sound->output_c1_to_s1;
+}
 void sound_set_master_on_off(const u8 value)
 {
   int master_on_off = (value & 0x80) == 0x80;
@@ -475,6 +522,8 @@ u8 sound_get_frequency_high(const SoundChannel channel)
     return sound->channel_one->length_stop << 6;
   case SOUND_CHANNEL_2:
     return sound->channel_two_playable->length_stop << 6;
+  case SOUND_CHANNEL_3:
+    return sound->channel_three->length_stop << 6;
   default:
       printf("sound_get_frequency_high channel %d not supported yet\n",
 	     channel);
@@ -482,21 +531,14 @@ u8 sound_get_frequency_high(const SoundChannel channel)
   }
 }
 
-Wave *sound_get_channel_3(){
-  return sound->wave;
-}
-
 Noise *sound_get_channel_4(){
   return sound->noise;
 }
-SoundControl *sound_get_control(){
-  return sound->control;
-}
 void sound_set_wave_pattern(const u16 address, const u8 value)
 {
-  sound->wave->wave_pattern[address - 0xFF30] = value;
+  sound->channel_three->wave_pattern[address - 0xFF30] = value;
 }
 u8 sound_get_wave_pattern(const u16 address)
 {
-  return sound->wave->wave_pattern[address - 0xFF30];
+  return sound->channel_three->wave_pattern[address - 0xFF30];
 }

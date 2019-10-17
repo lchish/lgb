@@ -284,15 +284,15 @@ u8 get_mem(u16 address){
 		case SOUND_MODE_2_FREQUENCY_HIGH_REGISTER:
 		  return sound_get_frequency_high(SOUND_CHANNEL_2);
 		case SOUND_MODE_3_SOUND_ON_OFF_REGISTER:
-		  return sound_get_channel_3()->sound_on_off;
+		  return sound_get_on_off(SOUND_CHANNEL_3);
 		case SOUND_MODE_3_SOUND_LENGTH_REGISTER:
-		  return sound_get_channel_3()->sound_length;
+		  return sound_get_length_wave_pattern(SOUND_CHANNEL_3);
 		case SOUND_MODE_3_OUTPUT_LEVEL_REGISTER:
-		  return sound_get_channel_3()->output_level;
+		  return sound_get_volume(SOUND_CHANNEL_3);
 		case SOUND_MODE_3_FREQUENCY_LOW_DATA_REGISTER:
-		  return sound_get_channel_3()->frequency_low;
+		  return sound_get_frequency_low();
 		case SOUND_MODE_3_FREQUENCY_HIGH_DATA_REGISTER:
-		  return sound_get_channel_3()->frequency_high;
+		  return sound_get_frequency_high(SOUND_CHANNEL_3);
 		case SOUND_MODE_4_SOUND_LENGTH_REGISTER:
 		  return sound_get_channel_4()->sound_length;
 		case SOUND_MODE_4_ENVELOPE_REGISTER:
@@ -302,11 +302,12 @@ u8 get_mem(u16 address){
 		case SOUND_MODE_4_COUNTER_REGISTER:
 		  return sound_get_channel_4()->counter_consecutive;
 		case SOUND_CHANNEL_CONTROL:
-		  return sound_get_control()->channel_control;
+		  return sound_get_channel_control();
 		case SOUND_OUTPUT_SELECTION_TERMINAL:
-		  return sound_get_control()->output_terminal;
-		case SOUND_ON_OFF:
-		  return sound_get_control()->sound_on_off;
+		  return sound_get_output_terminal();
+		/*   return sound_get_control()->output_terminal; */
+		/* case SOUND_ON_OFF: */
+		/*   return sound_get_control()->sound_on_off; */
 		case 0xFF30: // wave control registers
 		case 0xFF31:
 		case 0xFF32:
