@@ -294,13 +294,13 @@ u8 get_mem(u16 address){
 		case SOUND_MODE_3_FREQUENCY_HIGH_DATA_REGISTER:
 		  return sound_get_frequency_high(SOUND_CHANNEL_3);
 		case SOUND_MODE_4_SOUND_LENGTH_REGISTER:
-		  return sound_get_channel_4()->sound_length;
+		  return sound_get_length_wave_pattern(SOUND_CHANNEL_4);
 		case SOUND_MODE_4_ENVELOPE_REGISTER:
-		  return sound_get_channel_4()->volume_envelope;
+		  return sound_get_volume(SOUND_CHANNEL_4);
 		case SOUND_MODE_4_POLYNOMIAL_COUNTER_REGISTER:
-		  return sound_get_channel_4()->polynomial_counter;
+		  return sound_get_frequency_low(SOUND_CHANNEL_4);
 		case SOUND_MODE_4_COUNTER_REGISTER:
-		  return sound_get_channel_4()->counter_consecutive;
+		  return sound_get_frequency_high(SOUND_CHANNEL_4);
 		case SOUND_CHANNEL_CONTROL:
 		  return sound_get_channel_control();
 		case SOUND_OUTPUT_SELECTION_TERMINAL:
@@ -567,10 +567,10 @@ void set_mem(u16 address, u8 value){
 		  sound_set_volume(SOUND_CHANNEL_4, value);
 		  return;
 		case SOUND_MODE_4_POLYNOMIAL_COUNTER_REGISTER:
-		  sound_set_polynomial_counter(SOUND_CHANNEL_4, value);
+		  sound_set_frequency_low(SOUND_CHANNEL_4, value);
 		  return;
 		case SOUND_MODE_4_COUNTER_REGISTER:
-		  sound_set_counter_consecutive(SOUND_CHANNEL_4, value);
+		  sound_set_frequency_high(SOUND_CHANNEL_4, value);
 		  return;
 		case SOUND_CHANNEL_CONTROL:
 		  sound_set_channel_control(value);
