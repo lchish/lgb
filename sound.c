@@ -43,7 +43,7 @@ static Sint16 calc_channel_one(double time)
       }
     }
   }
-  sound->channel_one->sweep_timer += 1.0 / (double)SAMPLE_RATE;
+  sound->channel_one->frequency_sweep_timer += 1.0 / (double)SAMPLE_RATE;
 
   //calculate volume
   if(sound->channel_one->volume_sweep_on){
@@ -281,10 +281,10 @@ void sound_init()
 void sound_set_sweep(const u8 value)
 {
   int sweep_time = ((value >> 4) & 7);
-  sound->channel_one->sweep_time = sweep_time;
-  sound->channel_one->sweep_length = sweep_time / 128.0;
-  sound->channel_one->sweep_inc_dec = (value & 8) == 8; // 0 add, 1 sub
-  sound->channel_one->sweep_shift = value & 7;
+  sound->channel_one->frequency_sweep_time = sweep_time;
+  sound->channel_one->frequency_sweep_length = sweep_time / 128.0;
+  sound->channel_one->frequency_sweep_inc_dec = (value & 8) == 8; // 0 add, 1 sub
+  sound->channel_one->frequency_sweep_shift = value & 7;
   /*printf("sweep! value %X sweep_time %d length %f increase_decrease %d sweep_shift %d\n",
     value,
     sweep_time,
@@ -294,9 +294,9 @@ void sound_set_sweep(const u8 value)
 }
 u8 sound_get_sweep() // only channel 1
 {
-  return (sound->channel_one->sweep_time & 7) << 4 |
-    sound->channel_one->sweep_inc_dec << 3 |
-    (sound->channel_one->sweep_shift & 7);
+  return (sound->channel_one->frequency_sweep_time & 7) << 4 |
+    sound->channel_one->frequency_sweep_inc_dec << 3 |
+    (sound->channel_one->frequency_sweep_shift & 7);
 }
 
 void sound_set_length(const SoundChannel channel, const u8 value)
@@ -436,8 +436,8 @@ static void update_frequency(const SoundChannel channel)
     sound->channel_four->frequency_counter = 0.0;
     sound->channel_four->previous_noise_value = 0;
     sound->channel_four->length_expired = 1;
-      printf("sound->channel_four->frequency %f\n",
-	     sound->channel_four->frequency);
+    //printf("sound->channel_four->frequency %f\n",
+    //	     sound->channel_four->frequency);
       break;
   default:
     fprintf(stderr, "sound.c static update_frequency channel %d not used\n", channel);

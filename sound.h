@@ -21,7 +21,7 @@ typedef struct{
   int frequency_sweep_inc_dec;
   int frequency_sweep_shift;
   int frequency_sweep_enabled;
-  int sweep_time;
+  int frequency_sweep_time;
   int enabled;
   int wave_duty;
   int length_expired;
